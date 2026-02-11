@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # vLLM Service with Multi-modal support for MedGemma
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: medgemma-vllm
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/models
+      - vllm-data:/root/.cache/huggingface
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CUDA_VISIBLE_DEVICES=0
+      - HF_TOKEN=${HF_TOKEN}
+      - VLLM_WORKER_MULTIPROC_METHOD=spawn
+    command: >
+      --model google/medgemma-4b-it
+      --host 0.0.0.0
+      --port 8000
+      --trust-remote-code
+      --max-model-len 120000
+      --tensor-parallel-size 1
+      --dtype bfloat16
+      --download-dir /models
+      --served-model-name medgemma-4b-it
+      --enable-chunked-prefill
+      --max-num-seqs 256
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - medgemma-network
+
+  # Cloudflare Tunnel for vLLM API
+  cloudflare-tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflare-tunnel-vllm
+    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
+    restart: unless-stopped
+    depends_on:
+      - vllm
+    networks:
+      - medgemma-network
+    environment:
+      - TUNNEL_METRICS=0.0.0.0:45678
+
+volumes:
+  vllm-data:
+
+networks:
+  medgemma-network:
+    driver: bridge
