@@ -22,8 +22,8 @@ import {
 import { useCallback, useEffect, useRef } from 'react';
 import { useSSEHandler } from './useSSEHandler';
 
-// SSE endpoint - uses same base URL as REST API (backend runs on port 3001, route is /chat)
-const SSE_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+// SSE endpoint - uses same base URL as REST API
+const SSE_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 export interface UseChatReturn {
   messages: ChatMessage[];

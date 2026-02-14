@@ -3,7 +3,7 @@ import type { ZodSchema } from 'zod';
 import { ZodError } from 'zod';
 import { ApiErrorSchema, type ApiError } from '@/types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 export const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
