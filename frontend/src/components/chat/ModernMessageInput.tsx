@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { useChatStore } from '@/stores/chatStore';
 
 interface ModernMessageInputProps {
   onSendMessage: (text: string, images: string[]) => void;
@@ -17,6 +18,7 @@ export const ModernMessageInput: React.FC<ModernMessageInputProps> = ({
   const [message, setMessage] = useState('');
   const [images, setImages] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const wasStopped = useChatStore((state) => state.wasStopped);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -35,11 +37,14 @@ export const ModernMessageInput: React.FC<ModernMessageInputProps> = ({
     setImages(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if ((message.trim() || images.length > 0) && !isLoading) {
-      onSendMessage(message, images);
-      setMessage('');
-      setImages([]);
+      await onSendMessage(message, images);
+      // Only clear if the chat wasn't stopped
+      if (!wasStopped) {
+        setMessage('');
+        setImages([]);
+      }
     }
   };
 

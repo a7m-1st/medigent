@@ -27,6 +27,8 @@ from app.service.task import (
     delete_task_lock,
     get_or_create_task_lock,
     get_task_lock,
+    get_task_lock_by_task_id,
+    get_task_lock_if_exists,
     set_current_task_id,
     task_locks,
 )
@@ -269,25 +271,41 @@ def improve(id: str, data: SupplementChat):
 
 @router.delete("/chat/{id}", name="stop chat")
 def stop(id: str):
-    """stop the task"""
+    """Stop the task by task_id or project_id"""
     chat_logger.info("=" * 80)
     chat_logger.info(
         "🛑 [STOP-BUTTON] DELETE /chat/{id} request received from frontend"
     )
-    chat_logger.info(f"[STOP-BUTTON] project_id/task_id: {id}")
+    chat_logger.info(f"[STOP-BUTTON] id (task_id or project_id): {id}")
     chat_logger.info("=" * 80)
+    
+    # Try to find task lock by task_id first, then by project_id
+    task_lock = get_task_lock_by_task_id(id)
+    
+    if task_lock is None:
+        # Fall back to looking up by project_id
+        task_lock = get_task_lock_if_exists(id)
+    
+    if task_lock is None:
+        chat_logger.warning(
+            "[STOP-BUTTON] Task lock not found"
+            " for task_id or project_id,"
+            f" id: {id}"
+        )
+        return Response(status_code=204)
+    
+    chat_logger.info(
+        "[STOP-BUTTON] Task lock retrieved,"
+        f" task_lock.id: {task_lock.id},"
+        f" current_task_id: {task_lock.current_task_id}"
+    )
+    chat_logger.info(
+        "[STOP-BUTTON] Queueing"
+        " ActionStopData(Action.stop)"
+        " to task_lock queue"
+    )
+    
     try:
-        task_lock = get_task_lock(id)
-        chat_logger.info(
-            "[STOP-BUTTON] Task lock retrieved,"
-            f" task_lock.id: {task_lock.id},"
-            f" task_lock.status: {task_lock.status}"
-        )
-        chat_logger.info(
-            "[STOP-BUTTON] Queueing"
-            " ActionStopData(Action.stop)"
-            " to task_lock queue"
-        )
         asyncio.run(task_lock.put_queue(ActionStopData(action=Action.stop)))
         chat_logger.info(
             "[STOP-BUTTON] ActionStopData queued"
@@ -295,14 +313,11 @@ def stop(id: str):
             " workforce.stop_gracefully()"
         )
     except Exception as e:
-        # Task lock may not exist if task is already
-        # finished or never started
-        chat_logger.warning(
-            "[STOP-BUTTON] Task lock not found"
-            " or already stopped,"
-            f" task_id: {id},"
+        chat_logger.error(
+            "[STOP-BUTTON] Failed to queue stop action,"
             f" error: {str(e)}"
         )
+    
     return Response(status_code=204)
 
 

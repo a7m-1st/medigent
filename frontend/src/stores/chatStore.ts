@@ -15,6 +15,7 @@ interface ChatState {
   errorType: ErrorType
   streamingContent: string
   isSSEConnected: boolean
+  wasStopped: boolean
 
   // Actions
   addMessage: (message: ChatMessage) => void
@@ -28,6 +29,7 @@ interface ChatState {
   setError: (error: string | null, type?: ErrorType) => void
   clearError: () => void
   setSSEConnected: (isConnected: boolean) => void
+  setWasStopped: (wasStopped: boolean) => void
   clearMessages: () => void
   reset: () => void
 }
@@ -42,6 +44,7 @@ const initialState = {
   errorType: null as ErrorType,
   streamingContent: '',
   isSSEConnected: false,
+  wasStopped: false,
 }
 
 export const useChatStore = create<ChatState>()(
@@ -109,6 +112,11 @@ export const useChatStore = create<ChatState>()(
     setSSEConnected: (isConnected) =>
       set((state) => {
         state.isSSEConnected = isConnected
+      }),
+
+    setWasStopped: (wasStopped) =>
+      set((state) => {
+        state.wasStopped = wasStopped
       }),
 
     clearMessages: () =>

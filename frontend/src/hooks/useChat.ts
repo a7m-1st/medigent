@@ -149,10 +149,9 @@ export function useChat(): UseChatReturn {
           onError: (error) => {
             console.error(`[SSE ${currentSseId}] ❌ Connection error:`, error.message);
             // Only update state if this is still the current connection
+            // Note: Don't setLoading(false) here - SSE will auto-retry on errors like 429
             if (sseRef.current === sse) {
               store.setError(error.message);
-              store.setStreaming(false);
-              store.setSSEConnected(false);
             }
           },
           onClose: () => {
@@ -223,6 +222,9 @@ export function useChat(): UseChatReturn {
 
   const sendMessage = useCallback(
     async (question: string, attaches?: string[], config?: Partial<Chat>) => {
+      // Reset wasStopped flag at the start of a new send operation
+      store.setWasStopped(false);
+      
       const projectId = store.currentProjectId;
       const taskId = store.currentTaskId;
       
@@ -264,6 +266,7 @@ export function useChat(): UseChatReturn {
 
   const stopChat = useCallback(async () => {
     try {
+      store.setWasStopped(true);
       cleanupSSE();
       store.setStreaming(false);
       store.setSSEConnected(false);
@@ -281,9 +284,9 @@ export function useChat(): UseChatReturn {
         }
       }
 
-      const projectId = store.currentProjectId;
-      if (projectId) {
-        await chatService.stopChat(projectId);
+      const taskId = store.currentTaskId;
+      if (taskId) {
+        await chatService.stopChat(taskId);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to stop chat';

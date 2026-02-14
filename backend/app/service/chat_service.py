@@ -82,6 +82,10 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
     event_loop = asyncio.get_running_loop()
     sub_tasks: list[Task] = []
     
+    # Session timeout: 1 hour (3600 seconds)
+    SESSION_TIMEOUT_SECONDS = 3600
+    session_start_time = datetime.datetime.now()
+    
     while True:
         loop_iteration += 1
         logger.debug(
@@ -91,6 +95,30 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 "task_id": options.task_id,
             },
         )
+
+        # Check session timeout (1 hour)
+        elapsed = (datetime.datetime.now() - session_start_time).total_seconds()
+        if elapsed > SESSION_TIMEOUT_SECONDS:
+            # Stop workforce if running
+            if workforce is not None and workforce._running:
+                logger.info(
+                    "[LIFECYCLE] Stopping workforce due to session timeout"
+                )
+                workforce.stop()
+                workforce.stop_gracefully()
+            
+            # Send timeout error to client
+            yield sse_json(
+                "error",
+                {
+                    "message": f"Session timeout: Chat session exceeded {SESSION_TIMEOUT_SECONDS // 3600} hour limit",
+                    "type": "timeout",
+                },
+            )
+            # Clean up task lock
+            logger.info("[LIFECYCLE] Deleting task lock due to session timeout")
+            await delete_task_lock(task_lock.id)
+            break
 
         if await request.is_disconnected():
             logger.warning("=" * 80)

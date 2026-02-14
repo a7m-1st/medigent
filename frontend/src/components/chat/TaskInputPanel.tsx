@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import { useChat } from '@/hooks/useChat';
 import { cn } from '@/lib/utils';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
+import { useChatStore } from '@/stores/chatStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Paperclip, PauseCircle, Send, X } from 'lucide-react';
 import React, { useRef, useState } from 'react';
@@ -13,8 +14,9 @@ export const TaskInputPanel: React.FC = () => {
   
   const { sendMessage, stopChat, isLoading, isStreaming } = useChat();
   const { geminiApiKey } = useApiConfigStore();
+  const wasStopped = useChatStore((state) => state.wasStopped);
   
-  const isProcessing = isStreaming || isLoading;
+  const isProcessing = (isStreaming || isLoading) && !wasStopped;
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -67,8 +69,11 @@ export const TaskInputPanel: React.FC = () => {
         
         console.log('Message sent successfully');
         
-        setMessage('');
-        setImages([]);
+        // Only clear message and images if the chat wasn't stopped by the user
+        if (!wasStopped) {
+          setMessage('');
+          setImages([]);
+        }
       } catch (error) {
         console.error('Failed to send:', error);
         if (error instanceof Error) {

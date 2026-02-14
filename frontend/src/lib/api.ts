@@ -89,6 +89,11 @@ export async function apiRequest<TResponse>(
 
     const response = await apiClient.request(config);
     
+    // For 204 No Content responses, skip validation and return undefined
+    if (response.status === 204 || response.data === undefined || response.data === '') {
+      return undefined as TResponse;
+    }
+    
     const validatedData = responseSchema.parse(response.data);
     return validatedData;
   } catch (error) {

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { ModernMessageInput } from './ModernMessageInput';
 import { useChat } from '@/hooks/useChat';
+import { useChatStore } from '@/stores/chatStore';
 import { Bot, User, Sparkles, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -46,7 +47,12 @@ export const ModernChatWindow: React.FC = () => {
     }
   }, [localMessages, streamingContent]);
 
+  const setWasStopped = useChatStore((state) => state.setWasStopped);
+
   const handleSendMessage = async (text: string, images: string[]) => {
+    // Reset wasStopped flag at the start of a new send operation
+    setWasStopped(false);
+    
     const newMessage: LocalMessage = {
       id: Date.now().toString(),
       role: 'user',

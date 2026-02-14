@@ -38,17 +38,17 @@ export async function continueChat(
 
 /**
  * Stop a running chat session.
- * Backend endpoint: DELETE /chat/{project_id}
+ * Backend endpoint: DELETE /chat/{task_id}
  */
-export async function stopChat(projectId: string): Promise<void> {
+export async function stopChat(taskId: string): Promise<void> {
   try {
-    if (!projectId || typeof projectId !== 'string') {
-      throw new Error('Invalid project ID');
+    if (!taskId || typeof taskId !== 'string') {
+      throw new Error('Invalid task ID');
     }
     
     await apiRequest<void>({
       method: 'DELETE',
-      url: `/chat/${projectId}`,
+      url: `/chat/${taskId}`,
       responseSchema: z.void(),
     });
   } catch (error) {

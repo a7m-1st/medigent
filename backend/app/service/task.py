@@ -447,6 +447,14 @@ def get_task_lock_if_exists(id: str) -> TaskLock | None:
     return task_locks.get(id)
 
 
+def get_task_lock_by_task_id(task_id: str) -> TaskLock | None:
+    """Get task lock by task_id (current_task_id), otherwise return None"""
+    for task_lock in task_locks.values():
+        if task_lock.current_task_id == task_id:
+            return task_lock
+    return None
+
+
 def set_current_task_id(project_id: str, task_id: str) -> None:
     """Set the current task ID for a project's task lock"""
     task_lock = get_task_lock(project_id)

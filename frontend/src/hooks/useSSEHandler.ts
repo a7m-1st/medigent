@@ -374,33 +374,34 @@ export function useSSEHandler() {
     // Detect rate-limit (429) errors
     const msg = data.message || '';
     const isRateLimit = /429|rate.?limit|too many requests|quota.*exceed/i.test(msg);
-    chatStore.setError(msg, isRateLimit ? 'rate_limit' : 'generic');
-    chatStore.setStreaming(false);
     
-    // Cancel all pending tasks and mark working agents as error
-    taskStore.cancelPendingTasks();
-    const agents = agentStore.agents;
-    for (const agentName of MAIN_AGENT_NAMES) {
-      const agent = agents[agentName];
-      if (agent && agent.state === 'working') {
-        agentStore.setAgentError(agentName, msg.slice(0, 200));
+    // Display the error but don't reset connection state
+    // SSE will auto-retry on rate limits
+    chatStore.setError(msg, isRateLimit ? 'rate_limit' : 'generic');
+    
+    // Only mark agents as having an error, but keep the session alive
+    // so SSE can retry
+    if (!isRateLimit) {
+      // For non-rate-limit errors, we might want to stop
+      chatStore.setStreaming(false);
+      chatStore.setLoading(false);
+      
+      // Cancel all pending tasks and mark working agents as error
+      taskStore.cancelPendingTasks();
+      const agents = agentStore.agents;
+      for (const agentName of MAIN_AGENT_NAMES) {
+        const agent = agents[agentName];
+        if (agent && agent.state === 'working') {
+          agentStore.setAgentError(agentName, msg.slice(0, 200));
+        }
       }
     }
+    // For rate limit errors, keep the session running so SSE can retry
   }
 
   function handleBudgetNotEnough(data: any) {
     chatStore.setError('Budget not enough: ' + (data.message || 'Insufficient budget'), 'budget');
-    chatStore.setStreaming(false);
-    
-    // Cancel all pending tasks and mark working agents as error
-    taskStore.cancelPendingTasks();
-    const agents = agentStore.agents;
-    for (const agentName of MAIN_AGENT_NAMES) {
-      const agent = agents[agentName];
-      if (agent && agent.state === 'working') {
-        agentStore.setAgentError(agentName, 'Budget exhausted');
-      }
-    }
+    // Keep session running so SSE can retry
   }
 
   return { handleEvent };
