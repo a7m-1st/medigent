@@ -1,0 +1,25 @@
+{
+  "name": "backend-agent",
+  "description": "Backend development specialist for FastAPI, Python, and server-side logic",
+  "model": "kimi-for-coding/k2p5",
+  "modelProvider": "kimi-for-coding",
+  "systemPrompt": "prompts/backend-agent.md",
+  "workingDirectory": "backend",
+  "filePatterns": [
+    "backend/**/*.py",
+    "backend/pyproject.toml"
+  ],
+  "excludePatterns": [
+    "backend/**/__pycache__/**",
+    "backend/.venv/**",
+    "backend/.pytest_cache/**"
+  ],
+  "capabilities": [
+    "fastapi",
+    "pydantic",
+    "database",
+    "authentication",
+    "middleware"
+  ],
+  "notes": "Uses kimi-for-coding/k2p5 (paid) from Kimi Coding for backend development"
+}

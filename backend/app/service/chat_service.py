@@ -3,7 +3,6 @@
 import asyncio
 import datetime
 import logging
-import os
 import platform
 from pathlib import Path
 from typing import Any
@@ -22,7 +21,6 @@ from app.agent.factory import (
     developer_agent,
     document_agent,
     multi_modal_agent,
-    question_confirm_agent,
     task_summary_agent,
 )
 from app.agent.listen_chat_agent import ListenChatAgent
@@ -72,21 +70,8 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
         task_lock.conversation_history = []
     if not hasattr(task_lock, "last_task_result"):
         task_lock.last_task_result = ""
-    if not hasattr(task_lock, "question_agent"):
-        task_lock.question_agent = None
     if not hasattr(task_lock, "summary_generated"):
         task_lock.summary_generated = False
-
-    # Create or reuse persistent question_agent
-    if task_lock.question_agent is None:
-        task_lock.question_agent = question_confirm_agent(options)
-    else:
-        hist_len = len(task_lock.conversation_history)
-        logger.debug(
-            f"Reusing existing question_agent with {hist_len} history entries"
-        )
-
-    question_agent = task_lock.question_agent
 
     # Other variables
     camel_task = None
@@ -263,305 +248,194 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     )
                     continue
 
-                # Determine task complexity: attachments
-                # mean workforce, otherwise let agent decide
-                is_complex_task: bool
-                if len(attaches_to_use) > 0:
-                    is_complex_task = True
-                    logger.info(
-                        "[NEW-QUESTION] Has attachments"
-                        ", treating as complex task"
+                logger.info(
+                    "[NEW-QUESTION] Processing task "
+                    "via workforce flow"
+                )
+                # Update the sync_step with new task_id
+                if hasattr(item, "new_task_id") and item.new_task_id:
+                    set_current_task_id(
+                        options.project_id, item.new_task_id
+                    )
+                    task_lock.summary_generated = False
+
+                yield sse_json("confirmed", {"question": question})
+
+                # Check if workforce exists - reuse
+                # it; otherwise create new one
+                if workforce is not None:
+                    logger.debug(
+                        "[NEW-QUESTION] Reusing "
+                        "existing workforce "
+                        f"(id={id(workforce)})"
                     )
                 else:
-                    is_complex_task = await question_confirm(
-                        question_agent, question, task_lock
-                    )
                     logger.info(
-                        "[NEW-QUESTION] question_confirm"
-                        " result: is_complex="
-                        f"{is_complex_task}"
+                        "[NEW-QUESTION] Creating NEW workforce instance"
                     )
+                    (workforce) = await construct_workforce(options)
+                task_lock.status = Status.confirmed
 
-                if not is_complex_task:
-                    logger.info(
-                        "[NEW-QUESTION] Simple question"
-                        ", providing direct answer "
-                        "without workforce"
-                    )
-                    simple_answer_prompt = (
-                        f"{conv_ctx}"
-                        f"User Query: {question}\n\n"
-                        "Provide a direct, helpful "
-                        "answer to this simple "
-                        "question."
-                    )
+                # Create camel_task for the question
+                clean_task_content = question + options.summary_prompt
+                camel_task = Task(
+                    content=clean_task_content, id=options.task_id
+                )
+                if len(attaches_to_use) > 0:
+                    camel_task.additional_info = {
+                        Path(file_path).name: file_path
+                        for file_path in attaches_to_use
+                    }
 
+                # Stream decomposition in background
+                stream_state = {
+                    "subtasks": [],
+                    "seen_ids": set(),
+                    "last_content": "",
+                }
+                state_holder: dict[str, Any] = {
+                    "sub_tasks": [],
+                    "summary_task": "",
+                }
+
+                def on_stream_batch(
+                    new_tasks: list[Task], is_final: bool = False
+                ):
+                    fresh_tasks = [
+                        t
+                        for t in new_tasks
+                        if t.id not in stream_state["seen_ids"]
+                    ]
+                    for t in fresh_tasks:
+                        stream_state["seen_ids"].add(t.id)
+                    stream_state["subtasks"].extend(fresh_tasks)
+
+                def on_stream_text(chunk):
                     try:
-                        simple_resp = question_agent.step(simple_answer_prompt)
-                        if simple_resp and simple_resp.msgs:
-                            answer_content = simple_resp.msgs[0].content
+                        accumulated_content = (
+                            chunk.msg.content
+                            if hasattr(chunk, "msg") and chunk.msg
+                            else str(chunk)
+                        )
+                        last_content = stream_state["last_content"]
+
+                        # Calculate delta: new content
+                        # not in the previous chunk
+                        if accumulated_content.startswith(last_content):
+                            delta_content = accumulated_content[
+                                len(last_content) :
+                            ]
                         else:
-                            answer_content = (
-                                "I understand your "
-                                "question, but I'm "
-                                "having trouble "
-                                "generating a response "
-                                "right now."
+                            delta_content = accumulated_content
+
+                        stream_state["last_content"] = accumulated_content
+
+                        if delta_content:
+                            asyncio.run_coroutine_threadsafe(
+                                task_lock.put_queue(
+                                    ActionDecomposeTextData(
+                                        data={
+                                            "project_id": options.project_id,
+                                            "task_id": options.task_id,
+                                            "content": delta_content,
+                                        }
+                                    )
+                                ),
+                                event_loop,
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to stream decomposition text: {e}"
+                        )
+
+                async def run_decomposition():
+                    nonlocal summary_task_content
+                    try:
+                        sub_tasks = await asyncio.to_thread(
+                            workforce.workforce_make_sub_tasks,
+                            camel_task,
+                            context_for_coordinator,
+                            on_stream_batch,
+                            on_stream_text,
+                        )
+
+                        if stream_state["subtasks"]:
+                            sub_tasks = stream_state["subtasks"]
+                        state_holder["sub_tasks"] = sub_tasks
+                        logger.info(
+                            "Task decomposed into "
+                            f"{len(sub_tasks)} subtasks"
+                        )
+                        try:
+                            task_lock.decompose_sub_tasks = sub_tasks
+                        except Exception:
+                            pass
+
+                        # Generate task summary
+                        try:
+                            content_preview = (
+                                camel_task.content
+                                if hasattr(camel_task, "content")
+                                else ""
+                            )
+                            if content_preview is None:
+                                content_preview = ""
+                            if len(content_preview) > 80:
+                                cp = content_preview[:80]
+                                summary_task_content = cp + "..."
+                            else:
+                                summary_task_content = content_preview
+                            summary_task_content = (
+                                f"Task|{summary_task_content}"
+                            )
+                            task_lock.summary_generated = True
+                        except Exception:
+                            task_lock.summary_generated = True
+                            content_preview = (
+                                camel_task.content
+                                if hasattr(camel_task, "content")
+                                else ""
+                            )
+                            if content_preview is None:
+                                content_preview = ""
+                            if len(content_preview) > 80:
+                                cp = content_preview[:80]
+                                summary_task_content = cp + "..."
+                            else:
+                                summary_task_content = content_preview
+                            summary_task_content = (
+                                f"Task|{summary_task_content}"
                             )
 
-                        task_lock.add_conversation("assistant", answer_content)
+                        state_holder["summary_task"] = summary_task_content
+                        try:
+                            task_lock.summary_task_content = (
+                                summary_task_content
+                            )
+                        except Exception:
+                            pass
 
-                        yield sse_json(
-                            "wait_confirm",
-                            {"content": answer_content, "question": question},
+                        payload = {
+                            "project_id": options.project_id,
+                            "task_id": options.task_id,
+                            "sub_tasks": tree_sub_tasks(
+                                camel_task.subtasks
+                            ),
+                            "delta_sub_tasks": tree_sub_tasks(sub_tasks),
+                            "is_final": True,
+                            "summary_task": summary_task_content,
+                        }
+                        await task_lock.put_queue(
+                            ActionDecomposeProgressData(data=payload)
                         )
                     except Exception as e:
-                        logger.error(f"Error generating simple answer: {e}")
-                        yield sse_json(
-                            "wait_confirm",
-                            {
-                                "content": "I encountered an error"
-                                " while processing "
-                                "your question.",
-                                "question": question,
-                            },
+                        logger.error(
+                            f"Error in background decomposition: {e}",
+                            exc_info=True,
                         )
 
-                    # Clean up empty folder if it was created for this task
-                    if (
-                        hasattr(task_lock, "new_folder_path")
-                        and task_lock.new_folder_path
-                    ):
-                        try:
-                            folder_path = Path(task_lock.new_folder_path)
-                            if folder_path.exists() and folder_path.is_dir():
-                                # Check if folder is empty
-                                if not any(folder_path.iterdir()):
-                                    folder_path.rmdir()
-                                    logger.info(
-                                        "Cleaned up empty"
-                                        " folder: "
-                                        f"{folder_path}"
-                                    )
-                                    # Also clean up parent
-                                    # project folder if empty
-                                    project_folder = folder_path.parent
-                                    if project_folder.exists() and not any(
-                                        project_folder.iterdir()
-                                    ):
-                                        project_folder.rmdir()
-                                        logger.info(
-                                            "Cleaned up "
-                                            "empty project"
-                                            " folder: "
-                                            f"{project_folder}"
-                                        )
-                                else:
-                                    logger.info(
-                                        "Folder not empty"
-                                        ", keeping: "
-                                        f"{folder_path}"
-                                    )
-                            # Reset the folder path
-                            task_lock.new_folder_path = None
-                        except Exception as e:
-                            logger.error(f"Error cleaning up folder: {e}")
-                else:
-                    logger.info(
-                        "[NEW-QUESTION] Complex task, "
-                        "creating workforce and "
-                        "decomposing"
-                    )
-                    # Update the sync_step with new task_id
-                    if hasattr(item, "new_task_id") and item.new_task_id:
-                        set_current_task_id(
-                            options.project_id, item.new_task_id
-                        )
-                        task_lock.summary_generated = False
-
-                    yield sse_json("confirmed", {"question": question})
-
-                    # Check if workforce exists - reuse
-                    # it; otherwise create new one
-                    if workforce is not None:
-                        logger.debug(
-                            "[NEW-QUESTION] Reusing "
-                            "existing workforce "
-                            f"(id={id(workforce)})"
-                        )
-                    else:
-                        logger.info(
-                            "[NEW-QUESTION] Creating NEW workforce instance"
-                        )
-                        (workforce, mcp) = await construct_workforce(options)
-                        if options.new_agents:
-                            logger.warning(
-                                "Skipping dynamic new_agents setup: "
-                                "new_agent_model/format_agent_description "
-                                "are removed"
-                            )
-                    task_lock.status = Status.confirmed
-
-                    # Create camel_task for the question
-                    clean_task_content = question + options.summary_prompt
-                    camel_task = Task(
-                        content=clean_task_content, id=options.task_id
-                    )
-                    if len(attaches_to_use) > 0:
-                        camel_task.additional_info = {
-                            Path(file_path).name: file_path
-                            for file_path in attaches_to_use
-                        }
-
-                    # Stream decomposition in background
-                    stream_state = {
-                        "subtasks": [],
-                        "seen_ids": set(),
-                        "last_content": "",
-                    }
-                    state_holder: dict[str, Any] = {
-                        "sub_tasks": [],
-                        "summary_task": "",
-                    }
-
-                    def on_stream_batch(
-                        new_tasks: list[Task], is_final: bool = False
-                    ):
-                        fresh_tasks = [
-                            t
-                            for t in new_tasks
-                            if t.id not in stream_state["seen_ids"]
-                        ]
-                        for t in fresh_tasks:
-                            stream_state["seen_ids"].add(t.id)
-                        stream_state["subtasks"].extend(fresh_tasks)
-
-                    def on_stream_text(chunk):
-                        try:
-                            accumulated_content = (
-                                chunk.msg.content
-                                if hasattr(chunk, "msg") and chunk.msg
-                                else str(chunk)
-                            )
-                            last_content = stream_state["last_content"]
-
-                            # Calculate delta: new content
-                            # not in the previous chunk
-                            if accumulated_content.startswith(last_content):
-                                delta_content = accumulated_content[
-                                    len(last_content) :
-                                ]
-                            else:
-                                delta_content = accumulated_content
-
-                            stream_state["last_content"] = accumulated_content
-
-                            if delta_content:
-                                asyncio.run_coroutine_threadsafe(
-                                    task_lock.put_queue(
-                                        ActionDecomposeTextData(
-                                            data={
-                                                "project_id": options.project_id,
-                                                "task_id": options.task_id,
-                                                "content": delta_content,
-                                            }
-                                        )
-                                    ),
-                                    event_loop,
-                                )
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to stream decomposition text: {e}"
-                            )
-
-                    async def run_decomposition():
-                        nonlocal summary_task_content
-                        try:
-                            sub_tasks = await asyncio.to_thread(
-                                workforce.medgemma_make_sub_tasks,
-                                camel_task,
-                                context_for_coordinator,
-                                on_stream_batch,
-                                on_stream_text,
-                            )
-
-                            if stream_state["subtasks"]:
-                                sub_tasks = stream_state["subtasks"]
-                            state_holder["sub_tasks"] = sub_tasks
-                            logger.info(
-                                "Task decomposed into "
-                                f"{len(sub_tasks)} subtasks"
-                            )
-                            try:
-                                task_lock.decompose_sub_tasks = sub_tasks
-                            except Exception:
-                                pass
-
-                            # Generate task summary
-                            try:
-                                content_preview = (
-                                    camel_task.content
-                                    if hasattr(camel_task, "content")
-                                    else ""
-                                )
-                                if content_preview is None:
-                                    content_preview = ""
-                                if len(content_preview) > 80:
-                                    cp = content_preview[:80]
-                                    summary_task_content = cp + "..."
-                                else:
-                                    summary_task_content = content_preview
-                                summary_task_content = (
-                                    f"Task|{summary_task_content}"
-                                )
-                                task_lock.summary_generated = True
-                            except Exception:
-                                task_lock.summary_generated = True
-                                content_preview = (
-                                    camel_task.content
-                                    if hasattr(camel_task, "content")
-                                    else ""
-                                )
-                                if content_preview is None:
-                                    content_preview = ""
-                                if len(content_preview) > 80:
-                                    cp = content_preview[:80]
-                                    summary_task_content = cp + "..."
-                                else:
-                                    summary_task_content = content_preview
-                                summary_task_content = (
-                                    f"Task|{summary_task_content}"
-                                )
-
-                            state_holder["summary_task"] = summary_task_content
-                            try:
-                                task_lock.summary_task_content = (
-                                    summary_task_content
-                                )
-                            except Exception:
-                                pass
-
-                            payload = {
-                                "project_id": options.project_id,
-                                "task_id": options.task_id,
-                                "sub_tasks": tree_sub_tasks(
-                                    camel_task.subtasks
-                                ),
-                                "delta_sub_tasks": tree_sub_tasks(sub_tasks),
-                                "is_final": True,
-                                "summary_task": summary_task_content,
-                            }
-                            await task_lock.put_queue(
-                                ActionDecomposeProgressData(data=payload)
-                            )
-                        except Exception as e:
-                            logger.error(
-                                f"Error in background decomposition: {e}",
-                                exc_info=True,
-                            )
-
-                    bg_task = asyncio.create_task(run_decomposition())
-                    task_lock.add_background_task(bg_task)
+                bg_task = asyncio.create_task(run_decomposition())
+                task_lock.add_background_task(bg_task)
 
             elif item.action == Action.start:
                 if is_exceeded:
@@ -600,7 +474,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 task_lock.status = Status.processing
                 if not sub_tasks:
                     sub_tasks = getattr(task_lock, "decompose_sub_tasks", [])
-                task = asyncio.create_task(workforce.medgemma_start(sub_tasks))
+                task = asyncio.create_task(workforce.workforce_start(sub_tasks))
                 task_lock.add_background_task(task)
             elif item.action == Action.task_state:
                 # Track completed task results for the end event
@@ -793,13 +667,25 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 camel_task = None
                 logger.info("[LIFECYCLE] camel_task set to None")
 
-                if question_agent is not None:
-                    question_agent.reset()
+                # Close SSE connection after task ends
+                logger.info(
+                    "[LIFECYCLE] Breaking out of "
+                    "step_solve loop to close SSE "
+                    "connection after task end"
+                )
+                try:
+                    await delete_task_lock(task_lock.id)
                     logger.info(
-                        "[LIFECYCLE] question_agent"
-                        " reset for project "
-                        f"{options.project_id}"
+                        "[LIFECYCLE] Task lock deleted "
+                        "after task end"
                     )
+                except Exception as e:
+                    logger.error(
+                        f"Error deleting task lock "
+                        f"on end: {e}"
+                    )
+                break
+
             elif item.action == Action.stop:
                 logger.info("=" * 80)
                 logger.info(
@@ -930,63 +816,6 @@ def tree_sub_tasks(sub_tasks: list[Task], depth: int = 0):
 
     return result
 
-
-async def question_confirm(
-    agent: ListenChatAgent, prompt: str, task_lock: TaskLock | None = None
-) -> bool:
-    """Simple question confirmation - returns True
-    for complex tasks, False for simple questions."""
-
-    context_prompt = ""
-
-    full_prompt = f"""{context_prompt}User Query: {prompt}
-
-Determine if this user query is a complex task or a simple question.
-
-**Complex task** (answer "yes"): Requires tools, code execution, \
-file operations, multi-step planning, or creating/modifying content
-- Examples: "create a file", "search for X", \
-"implement feature Y", "write code", "analyze data"
-
-**Simple question** (answer "no"): Can be answered directly \
-with knowledge or conversation history, no action needed
-- Examples: greetings ("hello", "hi"), \
-fact queries ("what is X?"), clarifications, status checks
-
-Answer only "yes" or "no". Do not provide any explanation.
-
-Is this a complex task? (yes/no):"""
-
-    try:
-        resp = agent.step(full_prompt)
-
-        if not resp or not resp.msgs or len(resp.msgs) == 0:
-            logger.warning(
-                "No response from agent, defaulting to complex task"
-            )
-            return True
-
-        content = resp.msgs[0].content
-        if not content:
-            logger.warning(
-                "Empty content from agent, defaulting to complex task"
-            )
-            return True
-
-        normalized = content.strip().lower()
-        is_complex = "yes" in normalized
-
-        result_str = "complex task" if is_complex else "simple question"
-        logger.info(
-            f"Question confirm result: {result_str}",
-            extra={"response": content, "is_complex": is_complex},
-        )
-
-        return is_complex
-
-    except Exception as e:
-        logger.error(f"Error in question_confirm: {e}")
-        raise
 
 
 async def summary_task(agent: ListenChatAgent, task: Task) -> str:
@@ -1258,7 +1087,6 @@ the current date.
         developer,
         documenter,
         multi_modaler,
-        mcp,
     ) = results
 
     coordinator_agent, task_agent = coord_task_agents
@@ -1314,7 +1142,7 @@ the current date.
         multi_modaler,
     )
 
-    return workforce, mcp
+    return workforce
 
 
 def format_agent_description(agent_data: NewAgent) -> str:

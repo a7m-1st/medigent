@@ -158,15 +158,15 @@ class Workforce(BaseWorkforce):
             quality_score=80,
         )
 
-    def eigent_make_sub_tasks(
+    def workforce_make_sub_tasks(
         self,
         task: Task,
         coordinator_context: str = "",
         on_stream_batch=None,
         on_stream_text=None,
     ):
-        """Split process_task method to eigent_make_sub_tasks
-        and eigent_start method.
+        """Split process_task method to workforce_make_sub_tasks
+        and workforce_start method.
 
         Args:
             task: The main task to decompose
@@ -179,7 +179,7 @@ class Workforce(BaseWorkforce):
                 streaming text chunks
         """
         logger.debug(
-            "[DECOMPOSE] eigent_make_sub_tasks called",
+            "[DECOMPOSE] workforce_make_sub_tasks called",
             extra={"api_task_id": self.api_task_id, "task_id": task.id},
         )
 
@@ -222,11 +222,11 @@ class Workforce(BaseWorkforce):
         )
         return subtasks
 
-    async def eigent_start(self, subtasks: list[Task]):
+    async def workforce_start(self, subtasks: list[Task]):
         """start the workforce"""
         logger.debug(
             (
-                f"[WF-LIFECYCLE] eigent_start called with "
+                f"[WF-LIFECYCLE] workforce_start called with "
                 f"{len(subtasks)} subtasks"
             ),
             extra={"api_task_id": self.api_task_id},

@@ -72,10 +72,12 @@ class Chat(BaseModel):
     @classmethod
     def check_model_type(cls, model_type: str):
         try:
-            ModelType(model_type)
-        except ValueError:
-            # raise ValueError("Invalid model type")
-            logger.debug("model_type is invalid")
+            # Try to get the enum by name and return its value
+            enum_member = ModelType[model_type]
+            return enum_member.value
+        except KeyError:
+            # Not a valid enum name, return as-is
+            logger.debug(f"model_type '{model_type}' is not a valid ModelType enum")
         return model_type
 
     def get_bun_env(self) -> dict[str, str]:
