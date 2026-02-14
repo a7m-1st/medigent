@@ -176,11 +176,31 @@ export function useSSEHandler() {
     // Toolkit events only have agent_name, not agent_id
     if (isMainAgent(data.agent_name)) {
       agentStore.setAgentToolkit(data.agent_name, data.toolkit_name, data.method_name);
+      // Only pipe Terminal Toolkit commands into inline terminal output
+      if (data.message && data.toolkit_name === 'Terminal Toolkit') {
+        const agent = agentStore.agents[data.agent_name];
+        resourceStore.addTerminalOutput(
+          data.agent_name,
+          data.process_task_id,
+          agent?.displayName || data.agent_name,
+          `> ${data.method_name}: ${data.message}`
+        );
+      }
     }
   }
 
   function handleDeactivateToolkit(data: SSEDeactivateToolkitEvent['data']) {
     if (isMainAgent(data.agent_name)) {
+      // Only pipe Terminal Toolkit results into inline terminal output
+      if (data.message && data.toolkit_name === 'Terminal Toolkit') {
+        const agent = agentStore.agents[data.agent_name];
+        resourceStore.addTerminalOutput(
+          data.agent_name,
+          data.process_task_id,
+          agent?.displayName || data.agent_name,
+          data.message
+        );
+      }
       agentStore.clearAgentToolkit(data.agent_name);
     }
   }
@@ -200,7 +220,18 @@ export function useSSEHandler() {
       console.log('[SSEHandler] Decomposition final, auto-starting task for project:', data.project_id);
       taskService.startTask(data.project_id).catch((err) => {
         console.error('[SSEHandler] Failed to auto-start task:', err);
-        chatStore.setError('Failed to start task execution: ' + (err instanceof Error ? err.message : String(err)));
+        // Extract error message from various error types (Error, ApiError, or plain object)
+        let errorMsg = 'Unknown error';
+        if (err instanceof Error) {
+          errorMsg = err.message;
+        } else if (typeof err === 'object' && err !== null && 'error' in err) {
+          errorMsg = String((err as any).error);
+        } else if (typeof err === 'string') {
+          errorMsg = err;
+        } else {
+          errorMsg = String(err);
+        }
+        chatStore.setError('Failed to start task execution: ' + errorMsg);
       });
     }
   }
@@ -326,6 +357,9 @@ export function useSSEHandler() {
     
     chatStore.setStreaming(false);
     
+    // Mark all remaining running/waiting tasks as done
+    taskStore.completeRemainingTasks();
+    
     // Mark all working agents as completed
     const agents = agentStore.agents;
     for (const agentName of MAIN_AGENT_NAMES) {
@@ -337,13 +371,36 @@ export function useSSEHandler() {
   }
 
   function handleError(data: SSEErrorEvent['data']) {
-    chatStore.setError(data.message);
+    // Detect rate-limit (429) errors
+    const msg = data.message || '';
+    const isRateLimit = /429|rate.?limit|too many requests|quota.*exceed/i.test(msg);
+    chatStore.setError(msg, isRateLimit ? 'rate_limit' : 'generic');
     chatStore.setStreaming(false);
+    
+    // Cancel all pending tasks and mark working agents as error
+    taskStore.cancelPendingTasks();
+    const agents = agentStore.agents;
+    for (const agentName of MAIN_AGENT_NAMES) {
+      const agent = agents[agentName];
+      if (agent && agent.state === 'working') {
+        agentStore.setAgentError(agentName, msg.slice(0, 200));
+      }
+    }
   }
 
   function handleBudgetNotEnough(data: any) {
-    chatStore.setError('Budget not enough: ' + (data.message || 'Insufficient budget'));
+    chatStore.setError('Budget not enough: ' + (data.message || 'Insufficient budget'), 'budget');
     chatStore.setStreaming(false);
+    
+    // Cancel all pending tasks and mark working agents as error
+    taskStore.cancelPendingTasks();
+    const agents = agentStore.agents;
+    for (const agentName of MAIN_AGENT_NAMES) {
+      const agent = agents[agentName];
+      if (agent && agent.state === 'working') {
+        agentStore.setAgentError(agentName, 'Budget exhausted');
+      }
+    }
   }
 
   return { handleEvent };

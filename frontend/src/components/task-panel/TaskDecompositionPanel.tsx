@@ -1,17 +1,18 @@
-import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { cn } from '@/lib/utils';
 import { useTaskDecompStore } from '@/stores/taskDecompStore';
-import { 
-  ChevronRight, 
-  CheckCircle2, 
-  Circle, 
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  Activity,
+  AlertCircle,
+  CheckCircle2,
+  ChevronRight,
+  Circle,
+  Layers,
   Loader2,
   TreePine,
-  Layers,
-  Activity,
-  AlertCircle
+  XCircle,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import React from 'react';
 
 export const TaskDecompositionPanel: React.FC = () => {
   const { taskTree: rootTasks, isDecomposing } = useTaskDecompStore();
@@ -72,6 +73,7 @@ const TaskNode: React.FC<TaskNodeProps> = ({ task, level }) => {
       case 'done': return 'completed';
       case 'running': return 'in_progress';
       case 'failed': return 'error';
+      case 'cancelled': return 'cancelled';
       default: return 'waiting';
     }
   };
@@ -97,7 +99,9 @@ const TaskNode: React.FC<TaskNodeProps> = ({ task, level }) => {
           ) : status === 'in_progress' ? (
             <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
           ) : status === 'error' ? (
-            <AlertCircle className="w-4 h-4 text-rose-500" />
+            <AlertCircle className="w-4 h-4 text-yellow-500" />
+          ) : status === 'cancelled' ? (
+            <XCircle className="w-4 h-4 text-zinc-500" />
           ) : (
             <Circle className="w-4 h-4 text-zinc-600" />
           )}
@@ -106,7 +110,9 @@ const TaskNode: React.FC<TaskNodeProps> = ({ task, level }) => {
         <div className="flex-1 min-w-0">
           <p className={cn(
             "text-sm font-medium leading-tight",
-            status === 'completed' ? "text-zinc-500" : "text-zinc-200"
+            status === 'completed' ? "text-zinc-500" 
+              : status === 'cancelled' ? "text-zinc-600 line-through" 
+              : "text-zinc-200"
           )}>
             {task.content}
           </p>

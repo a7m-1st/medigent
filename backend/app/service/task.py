@@ -39,6 +39,7 @@ class Action(str, Enum):
     timeout = "timeout"                # Task timeout
     budget_not_enough = "budget_not_enough"  # Budget not enough notice
     terminal = "terminal"                  # Terminal output from agent
+    error = "error"                        # Error during execution
 
 class ActionBudgetNotEnough(BaseModel):
     action: Literal[Action.budget_not_enough] = Action.budget_not_enough
@@ -183,6 +184,11 @@ class ActionTimeoutData(BaseModel):
     ]
 
 
+class ActionErrorData(BaseModel):
+    action: Literal[Action.error] = Action.error
+    data: dict[Literal["message", "type"], str]
+
+
 ActionData = (
     ActionImproveData
     | ActionStartData
@@ -195,12 +201,15 @@ ActionData = (
     | ActionActivateToolkitData
     | ActionDeactivateToolkitData
     | ActionWriteFileData
+    | ActionTerminalData
     | ActionNoticeData
+    | ActionBudgetNotEnough
     | ActionStopData
     | ActionEndData
     | ActionTimeoutData
     | ActionDecomposeTextData
     | ActionDecomposeProgressData
+    | ActionErrorData
 )
 
 

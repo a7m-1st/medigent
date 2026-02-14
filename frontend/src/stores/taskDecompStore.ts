@@ -35,6 +35,8 @@ interface TaskDecompState {
   setSummaryTask: (summary: string) => void;
   setFinalSummary: (summary: string) => void;
   findTaskById: (taskId: string) => TaskNode | null;
+  cancelPendingTasks: () => void;
+  completeRemainingTasks: () => void;
   reset: () => void;
 }
 
@@ -74,6 +76,23 @@ function findTaskByIdInTree(nodes: TaskNode[], taskId: string): TaskNode | null 
     }
   }
   return null;
+}
+
+// ============================================
+// Helper to update all tasks matching a condition
+// ============================================
+const UNFINISHED_STATES = ['running', 'waiting', 'open', 'pending'];
+
+function updateUnfinishedTasks(nodes: TaskNode[], newState: string): void {
+  for (const node of nodes) {
+    const current = (node.state || '').toLowerCase();
+    if (UNFINISHED_STATES.includes(current) || current === '') {
+      node.state = newState;
+    }
+    if (node.subtasks.length > 0) {
+      updateUnfinishedTasks(node.subtasks, newState);
+    }
+  }
 }
 
 export const useTaskDecompStore = create<TaskDecompState>()(
@@ -177,6 +196,24 @@ export const useTaskDecompStore = create<TaskDecompState>()(
      */
     findTaskById: (taskId: string): TaskNode | null => {
       return findTaskByIdInTree(get().taskTree, taskId);
+    },
+    
+    /**
+     * Cancel all running/waiting/pending tasks (used on stop)
+     */
+    cancelPendingTasks: () => {
+      set((state) => {
+        updateUnfinishedTasks(state.taskTree, 'cancelled');
+      });
+    },
+    
+    /**
+     * Mark remaining running tasks as done (used on end)
+     */
+    completeRemainingTasks: () => {
+      set((state) => {
+        updateUnfinishedTasks(state.taskTree, 'done');
+      });
     },
     
     /**

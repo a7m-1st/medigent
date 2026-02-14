@@ -14,14 +14,7 @@ export function Header() {
   return (
     <header className="h-16 border-b bg-card flex items-center justify-between px-4 shrink-0">
       <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={toggleSidebar}
-          className="lg:hidden"
-        >
-          <Menu className="h-5 w-5" />
-        </Button>
+        {/* Menu button removed as per request */}
         <h1 className="text-xl font-bold text-foreground">
           MedGemma Team
         </h1>
@@ -41,9 +34,7 @@ export function Header() {
           )}
         </Button>
 
-        <Button variant="ghost" size="icon" aria-label="User menu">
-          <User className="h-5 w-5" />
-        </Button>
+        {/* User menu/Fullscreen removed as per request */}
       </div>
     </header>
   );

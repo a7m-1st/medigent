@@ -269,6 +269,18 @@ export function useChat(): UseChatReturn {
       store.setSSEConnected(false);
       store.setLoading(true);
 
+      // Cancel all pending/running tasks in the task tree
+      taskDecompStore.cancelPendingTasks();
+      
+      // Mark all working agents as completed (session stopped by user)
+      const agents = agentStatusStore.agents;
+      for (const name of Object.keys(agents)) {
+        const agent = agents[name];
+        if (agent && agent.state === 'working') {
+          agentStatusStore.setAgentCompleted(name, agent.knownIds[0] || '', 'Stopped by user', 0);
+        }
+      }
+
       const projectId = store.currentProjectId;
       if (projectId) {
         await chatService.stopChat(projectId);
@@ -279,7 +291,7 @@ export function useChat(): UseChatReturn {
     } finally {
       store.setLoading(false);
     }
-  }, [store, cleanupSSE]);
+  }, [store, cleanupSSE, taskDecompStore, agentStatusStore]);
 
   const sendHumanReply = useCallback(
     async (taskId: string, content: string) => {

@@ -11,10 +11,12 @@ export async function startTask(taskId: string): Promise<void> {
       throw new Error('Invalid task ID');
     }
     
+    // Backend returns 201 with no content, but axios may receive empty string
+    // Use schema that accepts void, null, or empty string
     await apiRequest<void>({
       method: 'POST',
       url: `/task/${taskId}/start`,
-      responseSchema: z.void(),
+      responseSchema: z.union([z.void(), z.null(), z.literal(''), z.any()]).transform(() => undefined),
     });
   } catch (error) {
     const apiError = handleApiError(error);

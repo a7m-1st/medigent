@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import type { ChatMessage } from '@/types'
 
+export type ErrorType = 'rate_limit' | 'budget' | 'generic' | null;
+
 interface ChatState {
   // State
   messages: ChatMessage[]
@@ -10,6 +12,7 @@ interface ChatState {
   isStreaming: boolean
   isLoading: boolean
   error: string | null
+  errorType: ErrorType
   streamingContent: string
   isSSEConnected: boolean
 
@@ -22,7 +25,8 @@ interface ChatState {
   setLoading: (isLoading: boolean) => void
   setCurrentTask: (taskId: string | null) => void
   setCurrentProject: (projectId: string | null) => void
-  setError: (error: string | null) => void
+  setError: (error: string | null, type?: ErrorType) => void
+  clearError: () => void
   setSSEConnected: (isConnected: boolean) => void
   clearMessages: () => void
   reset: () => void
@@ -35,6 +39,7 @@ const initialState = {
   isStreaming: false,
   isLoading: false,
   error: null,
+  errorType: null as ErrorType,
   streamingContent: '',
   isSSEConnected: false,
 }
@@ -89,9 +94,16 @@ export const useChatStore = create<ChatState>()(
         state.currentProjectId = projectId
       }),
 
-    setError: (error) =>
+    setError: (error, type) =>
       set((state) => {
         state.error = error
+        state.errorType = type ?? (error ? 'generic' : null)
+      }),
+
+    clearError: () =>
+      set((state) => {
+        state.error = null
+        state.errorType = null
       }),
 
     setSSEConnected: (isConnected) =>

@@ -33,6 +33,7 @@ from app.service.task import (
     Action,
     ActionDecomposeProgressData,
     ActionDecomposeTextData,
+    ActionErrorData,
     ActionImproveData,
     Agents,
     TaskLock,
@@ -76,27 +77,11 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
     # Other variables
     camel_task = None
     workforce = None
-    mcp = None
-    last_completed_task_result = ""  # Track the last completed task result
     summary_task_content = ""  # Track task summary
     loop_iteration = 0
     event_loop = asyncio.get_running_loop()
     sub_tasks: list[Task] = []
-
-    logger.info("=" * 80)
-    logger.info(
-        "🚀 [LIFECYCLE] step_solve STARTED",
-        extra={"project_id": options.project_id, "task_id": options.task_id},
-    )
-    logger.info("=" * 80)
-    logger.debug(
-        "Step solve options",
-        extra={
-            "task_id": options.task_id,
-            "model_platform": options.model_platform,
-        },
-    )
-
+    
     while True:
         loop_iteration += 1
         logger.debug(
@@ -474,17 +459,32 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 task_lock.status = Status.processing
                 if not sub_tasks:
                     sub_tasks = getattr(task_lock, "decompose_sub_tasks", [])
-                task = asyncio.create_task(workforce.workforce_start(sub_tasks))
+
+                async def workforce_start_with_error_handling():
+                    """Wrap workforce_start to catch errors and send SSE error events."""
+                    try:
+                        await workforce.workforce_start(sub_tasks)
+                    except Exception as e:
+                        error_msg = str(e)
+                        logger.error(
+                            f"[WORKFORCE] Error during task execution: {error_msg}",
+                            extra={"project_id": options.project_id, "task_id": options.task_id},
+                            exc_info=True,
+                        )
+                        # Put error action in queue so main loop can yield it
+                        await task_lock.put_queue(
+                            ActionErrorData(
+                                action=Action.error,
+                                data={"message": error_msg, "type": "workforce_error"},
+                            )
+                        )
+
+                task = asyncio.create_task(workforce_start_with_error_handling())
                 task_lock.add_background_task(task)
             elif item.action == Action.task_state:
                 # Track completed task results for the end event
-                task_id = item.data.get("task_id", "unknown")
                 task_state = item.data.get("state", "unknown")
                 task_result = item.data.get("result", "")
-
-                if task_state == "DONE" and task_result:
-                    last_completed_task_result = task_result
-
                 yield sse_json("task_state", item.data)
             elif item.action == Action.create_agent:
                 yield sse_json("create_agent", item.data)
@@ -508,6 +508,14 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 )
             elif item.action == Action.ask:
                 yield sse_json("ask", item.data)
+            elif item.action == Action.terminal:
+                yield sse_json(
+                    "terminal",
+                    {
+                        "process_task_id": item.process_task_id,
+                        "data": item.data,
+                    },
+                )
             elif item.action == Action.notice:
                 yield sse_json(
                     "notice",
@@ -520,6 +528,21 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 yield sse_json("decompose_text", item.data)
             elif item.action == Action.decompose_progress:
                 yield sse_json("to_sub_tasks", item.data)
+            elif item.action == Action.error:
+                # Error during workforce execution
+                error_message = item.data.get("message", "Unknown error")
+                error_type = item.data.get("type", "workforce_error")
+                logger.error(
+                    f"[SSE] Sending error event: {error_message}",
+                    extra={"project_id": options.project_id, "task_id": options.task_id},
+                )
+                yield sse_json(
+                    "error",
+                    {
+                        "message": error_message,
+                        "type": error_type,
+                    },
+                )
             elif item.action == Action.timeout:
                 logger.info("=" * 80)
                 logger.info(

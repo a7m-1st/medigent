@@ -4,8 +4,8 @@ import { ApiKeyModal } from '@/components/api-key/ApiKeyModal';
 import { TaskInputPanel } from '@/components/chat/TaskInputPanel';
 import { TaskDecompositionPanel } from '@/components/task-panel/TaskDecompositionPanel';
 import { AgentDashboard } from '@/components/agents/AgentDashboard';
-import { TerminalOutput } from '@/components/resources/TerminalOutput';
 import { BrowserSnapshots } from '@/components/resources/BrowserSnapshots';
+import { ErrorBanner } from '@/components/layout/ErrorBanner';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { 
   LayoutDashboard, 
@@ -58,6 +58,9 @@ export const DashboardPage: React.FC = () => {
           </div>
         </header>
 
+        {/* Global Error Banner */}
+        <ErrorBanner />
+
         {/* Main Dashboard Layout */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left: Agent Dashboard + Chat */}
@@ -84,14 +87,9 @@ export const DashboardPage: React.FC = () => {
               <TaskDecompositionPanel />
             </div>
             
-            {/* Bottom: Resource Monitors (Terminal + Browser) */}
-            <div className="h-1/2 flex flex-col">
-              <div className="flex-1 border-b border-white/5 overflow-hidden">
-                <TerminalOutput />
-              </div>
-              <div className="flex-1 overflow-hidden">
-                <BrowserSnapshots />
-              </div>
+            {/* Bottom: Browser Snapshots */}
+            <div className="h-2/5 overflow-hidden">
+              <BrowserSnapshots />
             </div>
           </aside>
         </div>

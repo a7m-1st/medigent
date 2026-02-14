@@ -1,13 +1,25 @@
-import React, { useEffect, useRef } from 'react';
 import { useResourceStore } from '@/stores/resourceStore';
-import { Terminal as TerminalIcon, Hash, Clock } from 'lucide-react';
+import { Clock, Hash, Terminal as TerminalIcon } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
 
-export const TerminalOutput: React.FC = () => {
+interface TerminalOutputProps {
+  agentName: string;
+  /** Compact mode for embedding inside agent cards */
+  compact?: boolean;
+  /** Max lines to show in compact mode */
+  maxLines?: number;
+}
+
+export const TerminalOutput: React.FC<TerminalOutputProps> = ({ 
+  agentName, 
+  compact = false,
+  maxLines = 50,
+}) => {
   const { terminalOutputs } = useResourceStore();
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Terminal outputs are keyed by agent name (not ID) since agent IDs can change
-  const logs = terminalOutputs['developer_agent'] || [];
+  const allLogs = terminalOutputs[agentName] || [];
+  const logs = compact ? allLogs.slice(-maxLines) : allLogs;
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -15,12 +27,43 @@ export const TerminalOutput: React.FC = () => {
     }
   }, [logs]);
 
+  if (compact) {
+    return (
+      <div className="flex flex-col h-full overflow-hidden">
+        <div 
+          ref={scrollRef}
+          className="flex-1 font-mono text-[10px] overflow-y-auto custom-scrollbar space-y-0.5 select-text p-2"
+        >
+          {logs.length === 0 ? (
+            <div className="flex items-center gap-1.5 text-zinc-600 italic">
+              <Hash className="w-2.5 h-2.5" />
+              <span>Waiting for output...</span>
+            </div>
+          ) : (
+            logs.map((log, i) => (
+              <div key={log.id} className="group flex gap-2 animate-in fade-in duration-200">
+                <span className="text-zinc-700 shrink-0 tabular-nums select-none">
+                  {(allLogs.length - logs.length + i + 1).toString().padStart(3, '0')}
+                </span>
+                <span className="text-emerald-500/60 shrink-0">$</span>
+                <span className="text-zinc-400 leading-relaxed whitespace-pre-wrap break-all">
+                  {log.output}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Full-size mode (legacy standalone usage)
   return (
     <div className="flex flex-col h-full bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
       <div className="flex items-center justify-between px-4 py-2 bg-zinc-900/50 border-b border-zinc-800">
         <div className="flex items-center gap-2">
           <TerminalIcon className="w-4 h-4 text-emerald-500" />
-          <span className="text-xs font-mono font-bold text-zinc-300">DEVELOPER_TERMINAL</span>
+          <span className="text-xs font-mono font-bold text-zinc-300">TERMINAL</span>
         </div>
         <div className="flex gap-1.5">
           <div className="w-2.5 h-2.5 rounded-full bg-zinc-800" />

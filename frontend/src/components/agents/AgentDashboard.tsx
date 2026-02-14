@@ -1,7 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAgentStatusStore, type AgentStatus, type ActivityEntry } from '@/stores/agentStatusStore';
+import { useResourceStore } from '@/stores/resourceStore';
 import { useChatStore } from '@/stores/chatStore';
+import { TerminalOutput } from '@/components/resources/TerminalOutput';
 import { 
   Globe, 
   Terminal, 
@@ -12,6 +14,7 @@ import {
   CheckCircle,
   Wrench,
   Clock,
+  ChevronUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -79,6 +82,21 @@ const AgentCard: React.FC<AgentCardProps> = ({ config, agent }) => {
   const isActive = !!agent;
   const state = agent?.state || 'idle';
   const [isExpanded, setIsExpanded] = React.useState(false);
+  const [showTerminal, setShowTerminal] = React.useState(false);
+  
+  // Check if this agent has terminal output
+  const terminalOutputs = useResourceStore((s) => s.terminalOutputs);
+  const terminalLogs = terminalOutputs[config.name] || [];
+  const hasTerminalOutput = terminalLogs.length > 0;
+  
+  // Auto-show terminal when new output arrives and agent is working
+  const prevCountRef = React.useRef(0);
+  React.useEffect(() => {
+    if (terminalLogs.length > prevCountRef.current && state === 'working') {
+      setShowTerminal(true);
+    }
+    prevCountRef.current = terminalLogs.length;
+  }, [terminalLogs.length, state]);
   
   // Color classes need to be hardcoded for Tailwind to detect them
   const colorClasses = getColorClasses(config.color, state, isActive);
@@ -92,7 +110,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ config, agent }) => {
         "relative overflow-hidden rounded-xl border p-4 transition-all duration-300 flex flex-col",
         colorClasses.bg,
         state === 'working' && isActive ? colorClasses.ring : "",
-        isExpanded ? "row-span-2 h-full z-10 shadow-2xl scale-[1.02]" : ""
+        (isExpanded || showTerminal) ? "row-span-2 h-full z-10 shadow-2xl scale-[1.02]" : ""
       )}
     >
       {/* Header */}
@@ -115,6 +133,22 @@ const AgentCard: React.FC<AgentCardProps> = ({ config, agent }) => {
             </span>
           </div>
         </div>
+
+        {/* Terminal toggle button */}
+        {hasTerminalOutput && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowTerminal(!showTerminal); }}
+            className={cn(
+              "p-1.5 rounded-lg border transition-all duration-200",
+              showTerminal
+                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                : "bg-zinc-800/50 border-zinc-700/50 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600"
+            )}
+            title={showTerminal ? "Hide terminal" : "Show terminal"}
+          >
+            <Terminal className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
       {/* Current Task / Error Content */}
@@ -122,11 +156,12 @@ const AgentCard: React.FC<AgentCardProps> = ({ config, agent }) => {
         <div 
           onClick={() => setIsExpanded(!isExpanded)}
           className={cn(
-            "flex-1 rounded-lg p-3 border mb-3 min-h-[48px] cursor-pointer transition-colors hover:bg-black/40",
+            "rounded-lg p-3 border mb-3 min-h-[48px] cursor-pointer transition-colors hover:bg-black/40",
             state === 'error' 
               ? "bg-rose-950/30 border-rose-500/20" 
               : "bg-black/20 border-white/5",
-            isExpanded ? "overflow-y-auto max-h-[300px]" : ""
+            isExpanded ? "overflow-y-auto max-h-[300px]" : "",
+            showTerminal ? "flex-none" : "flex-1"
           )}
         >
           <p className={cn(
@@ -142,8 +177,47 @@ const AgentCard: React.FC<AgentCardProps> = ({ config, agent }) => {
         </div>
       )}
 
-      {/* Activity Log - last 3 entries */}
-      {isActive && agent.activityLog && agent.activityLog.length > 0 && (
+      {/* Inline Terminal Output (collapsible) */}
+      <AnimatePresence>
+        {showTerminal && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="mb-3 overflow-hidden"
+          >
+            <div className={cn(
+              "rounded-lg border bg-black/40 overflow-hidden",
+              state === 'working' ? "border-emerald-500/20" : "border-zinc-700/50"
+            )}>
+              {/* Mini terminal header */}
+              <div className="flex items-center justify-between px-2 py-1 bg-zinc-900/60 border-b border-white/5">
+                <div className="flex items-center gap-1.5">
+                  <Terminal className="w-2.5 h-2.5 text-emerald-500" />
+                  <span className="text-[9px] font-mono text-zinc-500 uppercase">Terminal</span>
+                  <span className="text-[9px] font-mono text-zinc-600">
+                    ({terminalLogs.length} lines)
+                  </span>
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowTerminal(false); }}
+                  className="text-zinc-600 hover:text-zinc-400 transition-colors"
+                >
+                  <ChevronUp className="w-3 h-3" />
+                </button>
+              </div>
+              {/* Terminal content */}
+              <div className="h-[140px]">
+                <TerminalOutput agentName={config.name} compact maxLines={30} />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Activity Log - last 3 entries (hidden when terminal is shown to save space) */}
+      {!showTerminal && isActive && agent.activityLog && agent.activityLog.length > 0 && (
         <div className="flex-1 mb-3 space-y-1 max-h-[80px] overflow-hidden">
           <AnimatePresence mode="popLayout">
             {agent.activityLog.slice(-3).map((entry) => (
