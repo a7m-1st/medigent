@@ -13,7 +13,7 @@ import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { Key, ShieldCheck } from 'lucide-react';
 
 export const ApiKeyModal: React.FC = () => {
-  const { isConfigured, setApiKey, loadFromStorage, isModalOpen, setModalOpen } = useApiConfigStore();
+  const { setApiKey, loadFromStorage, isModalOpen, setModalOpen } = useApiConfigStore();
   const [key, setKey] = useState('');
 
   useEffect(() => {

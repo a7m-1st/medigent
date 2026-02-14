@@ -1,9 +1,9 @@
 import { useUIStore } from '@/stores';
 import { Button } from '@/components/ui/button';
-import { Moon, Sun, User, Menu } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
 
 export function Header() {
-  const { theme, setTheme, toggleSidebar } = useUIStore();
+  const { theme, setTheme } = useUIStore();
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
