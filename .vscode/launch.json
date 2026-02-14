@@ -1,0 +1,39 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "compounds": [
+    {
+      "name": "Debug App",
+      "preLaunchTask": "Before Debug",
+      "configurations": [
+        "Debug Python Backend (Attach)"
+      ],
+      "presentation": {
+        "hidden": false,
+        "group": "",
+        "order": 1
+      },
+      "stopAll": true
+    }
+  ],
+  "configurations": [
+    {
+      "name": "Debug Python Backend (Attach)",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "localhost",
+        "port": 5678
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}/backend",
+          "remoteRoot": "."
+        }
+      ],
+      "justMyCode": false
+    }
+  ]
+}

@@ -1,0 +1,319 @@
+
+
+import asyncio
+import logging
+import os
+import re
+import time
+from pathlib import Path
+
+from dotenv import load_dotenv
+from fastapi import APIRouter, Request, Response
+from fastapi.responses import StreamingResponse
+from app.component.environment import sanitize_env_path, set_user_env_path
+from app.model.chat import (
+    Chat,
+    HumanReply,
+    Status,
+    SupplementChat,
+    sse_json,
+)
+from app.service.chat_service import step_solve
+from app.service.task import (
+    Action,
+    ActionImproveData,
+    ActionStopData,
+    ImprovePayload,
+    delete_task_lock,
+    get_or_create_task_lock,
+    get_task_lock,
+    set_current_task_id,
+    task_locks,
+)
+
+router = APIRouter()
+
+# Logger for chat controller
+chat_logger = logging.getLogger("chat_controller")
+
+# SSE timeout configuration (60 minutes in seconds)
+SSE_TIMEOUT_SECONDS = 60 * 60
+
+
+async def _cleanup_task_lock_safe(task_lock, reason: str) -> bool:
+    """Safely cleanup task lock with existence check.
+
+    Args:
+        task_lock: The task lock to cleanup
+        reason: Reason for cleanup (for logging)
+
+    Returns:
+        True if cleanup was performed, False otherwise
+    """
+    if not task_lock:
+        return False
+
+    # Check if task_lock still exists before attempting cleanup
+    if task_lock.id not in task_locks:
+        chat_logger.debug(
+            f"[{reason}] Task lock already removed, skipping cleanup",
+            extra={"task_id": task_lock.id},
+        )
+        return False
+
+    try:
+        task_lock.status = Status.done
+        await delete_task_lock(task_lock.id)
+        chat_logger.info(
+            f"[{reason}] Task lock cleanup completed",
+            extra={"task_id": task_lock.id},
+        )
+        return True
+    except Exception as e:
+        chat_logger.error(
+            f"[{reason}] Failed to cleanup task lock",
+            extra={"task_id": task_lock.id, "error": str(e)},
+            exc_info=True,
+        )
+        return False
+
+
+async def timeout_stream_wrapper(
+    stream_generator,
+    timeout_seconds: int = SSE_TIMEOUT_SECONDS,
+    task_lock=None,
+):
+    """Wraps a stream generator with timeout handling.
+
+    Closes the SSE connection if no data is received within the timeout period.
+    Triggers cleanup if timeout occurs to prevent resource leaks.
+    """
+    last_data_time = time.time()
+    generator = stream_generator.__aiter__()
+    cleanup_triggered = False
+
+    try:
+        while True:
+            elapsed = time.time() - last_data_time
+            remaining_timeout = timeout_seconds - elapsed
+
+            try:
+                data = await asyncio.wait_for(
+                    generator.__anext__(), timeout=remaining_timeout
+                )
+                last_data_time = time.time()
+                yield data
+            except TimeoutError:
+                chat_logger.warning(
+                    "SSE timeout: No data received, closing connection",
+                    extra={"timeout_seconds": timeout_seconds},
+                )
+                timeout_min = timeout_seconds // 60
+                yield sse_json(
+                    "error",
+                    {
+                        "message": "Connection timeout: No data"
+                        f" received for {timeout_min}"
+                        " minutes"
+                    },
+                )
+                cleanup_triggered = await _cleanup_task_lock_safe(
+                    task_lock, "TIMEOUT"
+                )
+                break
+            except StopAsyncIteration:
+                break
+
+    except asyncio.CancelledError:
+        chat_logger.info(
+            "[STREAM-CANCELLED] Stream cancelled, triggering cleanup"
+        )
+        if not cleanup_triggered:
+            await _cleanup_task_lock_safe(task_lock, "CANCELLED")
+        raise
+    except Exception as e:
+        chat_logger.error(
+            "[STREAM-ERROR] Unexpected error in stream wrapper",
+            extra={"error": str(e)},
+            exc_info=True,
+        )
+        if not cleanup_triggered:
+            await _cleanup_task_lock_safe(task_lock, "ERROR")
+        raise
+
+
+@router.post("/chat", name="start chat")
+async def post(data: Chat, request: Request):
+    chat_logger.info(
+        "Starting new chat session",
+        extra={
+            "project_id": data.project_id,
+            "task_id": data.task_id,
+        },
+    )
+
+    task_lock = get_or_create_task_lock(data.project_id)
+
+    # Set user-specific environment path for this thread
+    set_user_env_path(data.env_path)
+    # Load environment with validated path
+    safe_env_path = sanitize_env_path(data.env_path)
+    if safe_env_path:
+        load_dotenv(dotenv_path=safe_env_path)
+
+    os.environ["file_save_path"] = data.file_save_path()
+    os.environ["browser_port"] = str(data.browser_port)
+    os.environ["OPENAI_API_KEY"] = data.api_key
+    os.environ["OPENAI_API_BASE_URL"] = (
+        data.api_url or "https://api.openai.com/v1"
+    )
+    os.environ["CAMEL_MODEL_LOG_ENABLED"] = "true"
+
+    # Set user-specific search engine configuration if provided
+    if data.search_config:
+        for key, value in data.search_config.items():
+            if value:
+                os.environ[key] = value
+                chat_logger.debug(
+                    f"Set search config: {key}",
+                    extra={"project_id": data.project_id},
+                )
+
+    camel_log = (
+        Path.home()
+        / ".medgemma"
+        / ("project_" + data.project_id)
+        / ("task_" + data.task_id)
+        / "camel_logs"
+    )
+    camel_log.mkdir(parents=True, exist_ok=True)
+
+    os.environ["CAMEL_LOG_DIR"] = str(camel_log)
+
+    # Set the initial current_task_id in task_lock
+    set_current_task_id(data.project_id, data.task_id)
+
+    # Put initial action in queue to start processing
+    await task_lock.put_queue(
+        ActionImproveData(
+            data=ImprovePayload(
+                question=data.question,
+                attaches=data.attaches or [],
+            ),
+            new_task_id=data.task_id,
+        )
+    )
+
+    chat_logger.info(
+        "Chat session initialized",
+        extra={
+            "project_id": data.project_id,
+            "task_id": data.task_id,
+            "log_dir": str(camel_log),
+        },
+    )
+    return StreamingResponse(
+        timeout_stream_wrapper(
+            step_solve(data, request, task_lock), task_lock=task_lock
+        ),
+        media_type="text/event-stream",
+    )
+
+
+@router.post("/chat/{id}", name="improve chat")
+def improve(id: str, data: SupplementChat):
+    chat_logger.info(
+        "Chat improvement requested",
+        extra={"task_id": id, "question_length": len(data.question)},
+    )
+    task_lock = get_task_lock(id)
+
+    # Allow continuing conversation even after task is done
+    # This supports multi-turn conversation after complex task completion
+    if task_lock.status == Status.done:
+        # Reset status to allow processing new messages
+        task_lock.status = Status.confirming
+        # Clear any existing background tasks since workforce was stopped
+        if hasattr(task_lock, "background_tasks"):
+            task_lock.background_tasks.clear()
+        # Note: conversation_history and last_task_result are preserved
+
+        # Log context preservation
+        if hasattr(task_lock, "conversation_history"):
+            hist_len = len(task_lock.conversation_history)
+            chat_logger.info(
+                f"[CONTEXT] Preserved {hist_len} conversation entries"
+            )
+        if hasattr(task_lock, "last_task_result"):
+            result_len = len(task_lock.last_task_result)
+            chat_logger.info(
+                f"[CONTEXT] Preserved task result: {result_len} chars"
+            )
+
+    asyncio.run(
+        task_lock.put_queue(
+            ActionImproveData(
+                data=ImprovePayload(
+                    question=data.question,
+                    attaches=data.attaches or [],
+                ),
+                new_task_id=data.task_id,
+            )
+        )
+    )
+    chat_logger.info(
+        "Improvement request queued with preserved context",
+        extra={"project_id": id, "task_id": data.task_id},
+    )
+    return Response(status_code=201)
+
+@router.delete("/chat/{id}", name="stop chat")
+def stop(id: str):
+    """stop the task"""
+    chat_logger.info("=" * 80)
+    chat_logger.info(
+        "🛑 [STOP-BUTTON] DELETE /chat/{id} request received from frontend"
+    )
+    chat_logger.info(f"[STOP-BUTTON] project_id/task_id: {id}")
+    chat_logger.info("=" * 80)
+    try:
+        task_lock = get_task_lock(id)
+        chat_logger.info(
+            "[STOP-BUTTON] Task lock retrieved,"
+            f" task_lock.id: {task_lock.id},"
+            f" task_lock.status: {task_lock.status}"
+        )
+        chat_logger.info(
+            "[STOP-BUTTON] Queueing"
+            " ActionStopData(Action.stop)"
+            " to task_lock queue"
+        )
+        asyncio.run(task_lock.put_queue(ActionStopData(action=Action.stop)))
+        chat_logger.info(
+            "[STOP-BUTTON] ActionStopData queued"
+            " successfully, this will trigger"
+            " workforce.stop_gracefully()"
+        )
+    except Exception as e:
+        # Task lock may not exist if task is already
+        # finished or never started
+        chat_logger.warning(
+            "[STOP-BUTTON] Task lock not found"
+            " or already stopped,"
+            f" task_id: {id},"
+            f" error: {str(e)}"
+        )
+    return Response(status_code=204)
+
+
+@router.post("/chat/{id}/human-reply")
+def human_reply(id: str, data: HumanReply):
+    chat_logger.info(
+        "Human reply received",
+        extra={"task_id": id, "reply_length": len(data.reply)},
+    )
+    task_lock = get_task_lock(id)
+    asyncio.run(task_lock.put_human_input(data.agent, data.reply))
+    chat_logger.debug("Human reply processed", extra={"task_id": id})
+    return Response(status_code=201)
+
