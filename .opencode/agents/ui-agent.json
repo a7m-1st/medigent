@@ -1,0 +1,25 @@
+{
+  "name": "ui-agent",
+  "description": "Frontend development specialist for React, TypeScript, and UI components",
+  "model": "github-copilot/gemini-3-flash-preview",
+  "modelProvider": "github-copilot",
+  "systemPrompt": "prompts/ui-agent.md",
+  "workingDirectory": "frontend",
+  "filePatterns": [
+    "frontend/**/*.tsx",
+    "frontend/**/*.ts",
+    "frontend/**/*.css"
+  ],
+  "excludePatterns": [
+    "frontend/node_modules/**",
+    "frontend/dist/**"
+  ],
+  "capabilities": [
+    "component-development",
+    "typescript",
+    "state-management",
+    "styling",
+    "testing"
+  ],
+  "notes": "Uses github-copilot/gemini-3-flash-preview via GitHub Copilot for fast UI component development"
+}
