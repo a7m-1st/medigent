@@ -13,7 +13,7 @@ export const TaskInputPanel: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { sendMessage, stopChat, isLoading, isStreaming } = useChat();
-  const { geminiApiKey } = useApiConfigStore();
+  const { geminiApiKey, backendHasApiKey } = useApiConfigStore();
   const wasStopped = useChatStore((state) => state.wasStopped);
   
   const isProcessing = (isStreaming || isLoading) && !wasStopped;
@@ -41,18 +41,19 @@ export const TaskInputPanel: React.FC = () => {
       try {
         console.log('Sending message:', message);
         
-        // Check if API key is configured
-        if (!geminiApiKey) {
+        // Check if API key is configured (frontend or backend)
+        if (!geminiApiKey && !backendHasApiKey) {
           console.error('No API key configured!');
-          alert('Please enter your Gemini API key in the settings first.');
+          alert('Please enter your Gemini API key in the settings, or configure it in the backend .env file.');
           return;
         }
         
         // Use sendMessage which automatically detects whether to use improve or start new chat
+        // If no frontend key, send empty string — backend will use its .env default
         await sendMessage(message, images, {
           model_platform: "GEMINI",
           model_type: "GEMINI_3_FLASH",
-          api_key: geminiApiKey,
+          api_key: geminiApiKey || "",
           api_url: null,
           language: "en",
           browser_port: 9222,
