@@ -92,7 +92,7 @@ export const TaskInputPanel: React.FC = () => {
   };
 
   return (
-    <div className="h-full flex flex-col bg-zinc-950 border-t border-white/5">
+    <div className="flex flex-col bg-zinc-950">
       {/* Attached Images */}
       <AnimatePresence>
         {images.length > 0 && (
