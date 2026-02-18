@@ -19,36 +19,36 @@ export const BrowserSnapshots: React.FC = () => {
 
   const taskSnapshots = currentTaskId ? (snapshots[currentTaskId] || []) : [];
 
-  if (!browserAgent) return null;
-
   return (
-    <div className="flex flex-col h-full bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
-      <div className="flex items-center justify-between px-4 py-2 bg-zinc-900/50 border-b border-zinc-800">
+    <div className="flex flex-col h-full bg-background-secondary border border-border rounded-xl overflow-hidden shadow-lg">
+      <div className="flex items-center justify-between px-4 py-2 bg-background-tertiary border-b border-border">
         <div className="flex items-center gap-2">
-          <Monitor className="w-4 h-4 text-blue-500" />
-          <span className="text-xs font-mono font-bold text-zinc-300">BROWSER_SNAPSHOTS</span>
+          <Monitor className="w-4 h-4 text-accent" />
+          <span className="text-xs font-mono font-bold text-foreground-secondary">BROWSER_SNAPSHOTS</span>
         </div>
-        <div className="text-[10px] text-zinc-500 font-mono">
+        <div className="text-[10px] text-foreground-muted font-mono">
           {taskSnapshots.length} CAPTURES
         </div>
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto custom-scrollbar">
-        {taskSnapshots.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-zinc-600 gap-3">
-            <div className="w-12 h-12 rounded-full bg-zinc-900 flex items-center justify-center border border-white/5">
-              <ImageIcon className="w-6 h-6 opacity-20" />
+        {!browserAgent || taskSnapshots.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-foreground-muted gap-3">
+            <div className="w-12 h-12 rounded-full bg-background-tertiary flex items-center justify-center border border-border">
+              <ImageIcon className="w-6 h-6 opacity-30" />
             </div>
-            <p className="text-xs italic">No browser activity recorded yet</p>
+            <p className="text-xs italic">
+              {!browserAgent ? 'Waiting for browser agent...' : 'No browser activity recorded yet'}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6">
             <AnimatePresence mode="popLayout">
               {taskSnapshots.map((snapshot, i) => (
-                <SnapshotCard 
-                  key={snapshot.id} 
-                  snapshot={snapshot} 
-                  isLatest={i === taskSnapshots.length - 1} 
+                <SnapshotCard
+                  key={snapshot.id}
+                  snapshot={snapshot}
+                  isLatest={i === taskSnapshots.length - 1}
                 />
               ))}
             </AnimatePresence>
@@ -70,34 +70,34 @@ const SnapshotCard: React.FC<SnapshotCardProps> = ({ snapshot, isLatest }) => {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
-        "group relative bg-zinc-900 rounded-lg border border-white/5 overflow-hidden",
-        isLatest ? "ring-2 ring-blue-500/50" : ""
+        "group relative bg-card rounded-lg border border-card-border overflow-hidden",
+        isLatest && "ring-2 ring-accent/50"
       )}
     >
-      <div className="aspect-video relative bg-black flex items-center justify-center overflow-hidden">
-        <img 
-          src={snapshot.imageData} 
-          alt="Browser View" 
+      <div className="aspect-video relative bg-background-tertiary flex items-center justify-center overflow-hidden">
+        <img
+          src={snapshot.imageData}
+          alt="Browser View"
           className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
         />
         {isLatest && (
-          <div className="absolute top-2 right-2 px-2 py-0.5 bg-blue-500 text-[9px] font-bold text-white rounded-full animate-pulse">
+          <div className="absolute top-2 right-2 px-2 py-0.5 bg-accent text-[9px] font-bold text-accent-foreground rounded-full animate-pulse">
             LIVE
           </div>
         )}
       </div>
-      
-      <div className="p-3 bg-zinc-900/90 border-t border-white/5">
+
+      <div className="p-3 bg-card border-t border-card-border">
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <div className="flex items-center gap-1.5 min-w-0">
-            <ExternalLink className="w-3 h-3 text-zinc-500 shrink-0" />
-            <span className="text-[10px] text-zinc-300 truncate font-mono">
+            <ExternalLink className="w-3 h-3 text-foreground-muted shrink-0" />
+            <span className="text-[10px] text-foreground-secondary truncate font-mono">
               {snapshot.browserUrl}
             </span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <Clock className="w-3 h-3 text-zinc-600" />
-            <span className="text-[9px] text-zinc-600">
+            <Clock className="w-3 h-3 text-foreground-muted" />
+            <span className="text-[9px] text-foreground-muted">
               {new Date(snapshot.timestamp).toLocaleTimeString()}
             </span>
           </div>

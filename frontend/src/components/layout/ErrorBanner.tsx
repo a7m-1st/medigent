@@ -15,26 +15,26 @@ const ERROR_CONFIG: Record<Exclude<ErrorType, null>, {
   rate_limit: {
     icon: <AlertTriangle className="w-4 h-4" />,
     title: 'Rate Limit Reached',
-    bgClass: 'bg-amber-500/10',
-    borderClass: 'border-amber-500/30',
-    iconClass: 'text-amber-400',
-    textClass: 'text-amber-200',
+    bgClass: 'bg-warning-light',
+    borderClass: 'border-warning/30',
+    iconClass: 'text-warning',
+    textClass: 'text-warning',
   },
   budget: {
     icon: <CreditCard className="w-4 h-4" />,
     title: 'Budget Exhausted',
-    bgClass: 'bg-red-500/10',
-    borderClass: 'border-red-500/30',
-    iconClass: 'text-red-400',
-    textClass: 'text-red-200',
+    bgClass: 'bg-error-light',
+    borderClass: 'border-error/30',
+    iconClass: 'text-error',
+    textClass: 'text-error',
   },
   generic: {
     icon: <XCircle className="w-4 h-4" />,
     title: 'Error',
-    bgClass: 'bg-red-500/10',
-    borderClass: 'border-red-500/30',
-    iconClass: 'text-red-400',
-    textClass: 'text-red-200',
+    bgClass: 'bg-error-light',
+    borderClass: 'border-error/30',
+    iconClass: 'text-error',
+    textClass: 'text-error',
   },
 };
 
@@ -62,12 +62,12 @@ export const ErrorBanner: React.FC = () => {
             <span className={`text-xs font-bold uppercase tracking-wider ${config.iconClass}`}>
               {config.title}
             </span>
-            <span className={`text-xs ${config.textClass} flex-1 truncate`}>
+            <span className={`text-xs ${config.textClass} flex-1 truncate opacity-80`}>
               {error}
             </span>
             <button
               onClick={clearError}
-              className="p-1 rounded hover:bg-white/10 transition-colors text-zinc-400 hover:text-zinc-200"
+              className="p-1 rounded hover:bg-background-secondary transition-colors text-foreground-muted hover:text-foreground"
               aria-label="Dismiss error"
             >
               <X className="w-3.5 h-3.5" />

@@ -2,7 +2,8 @@ import React, { useRef, useEffect, useCallback } from 'react';
 import { useChatStore } from '@/stores/chatStore';
 import { MessageBubble } from './MessageBubble';
 import { ThinkingIndicator } from './ThinkingIndicator';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Stethoscope, Brain, FileSearch, Globe } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 export const ConversationPanel: React.FC = () => {
   const messages = useChatStore((s) => s.messages);
@@ -34,7 +35,7 @@ export const ConversationPanel: React.FC = () => {
     <div
       ref={scrollContainerRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto custom-scrollbar"
+      className="flex-1 overflow-y-auto custom-scrollbar bg-background"
     >
       <div className="max-w-3xl mx-auto px-6 py-6">
         {isEmpty ? (
@@ -55,39 +56,55 @@ export const ConversationPanel: React.FC = () => {
   );
 };
 
-const EmptyState: React.FC = () => (
-  <div className="flex flex-col items-center justify-center min-h-[60vh] text-center select-none">
-    {/* Logo */}
-    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center mb-6 shadow-[0_0_40px_rgba(37,99,235,0.2)]">
-      <Sparkles className="w-8 h-8 text-white" />
+const EmptyState: React.FC = () => {
+  const suggestions = [
+    { icon: Stethoscope, text: 'Analyze medical imaging' },
+    { icon: FileSearch, text: 'Search clinical literature' },
+    { icon: Brain, text: 'Draft clinical reports' },
+    { icon: Globe, text: 'Find treatment guidelines' },
+  ];
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center select-none">
+      {/* Logo */}
+      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center mb-6 shadow-glow-lg">
+        <Sparkles className="w-8 h-8 text-white" />
+      </div>
+
+      {/* Title */}
+      <h1 className="text-2xl font-semibold text-foreground mb-2 tracking-tight">
+        MedGemma
+      </h1>
+
+      {/* Subtitle */}
+      <p className="text-sm text-foreground-muted max-w-md leading-relaxed">
+        Your AI-powered multi-agent medical assistant. Ask a question, request a task,
+        or upload an image to get started.
+      </p>
+
+      {/* Warning badge */}
+      <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-warning-light border border-warning/20 text-warning text-xs font-medium">
+        <span>Research & Demo Only</span>
+      </div>
+
+      {/* Suggestion chips */}
+      <div className="mt-8 flex flex-wrap justify-center gap-2 max-w-lg">
+        {suggestions.map((suggestion) => (
+          <button
+            key={suggestion.text}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2.5 rounded-xl",
+              "bg-card border border-card-border",
+              "text-sm text-foreground-secondary",
+              "hover:border-accent hover:text-accent hover:bg-accent-light/50",
+              "transition-all duration-200 cursor-default"
+            )}
+          >
+            <suggestion.icon className="w-4 h-4" />
+            {suggestion.text}
+          </button>
+        ))}
+      </div>
     </div>
-
-    {/* Title */}
-    <h1 className="text-2xl font-semibold text-zinc-100 mb-2 tracking-tight">
-      MedGemma
-    </h1>
-
-    {/* Subtitle */}
-    <p className="text-sm text-zinc-500 max-w-md leading-relaxed">
-      Your AI-powered multi-agent assistant. Ask a question, request a task,
-      or upload an image to get started.
-    </p>
-
-    {/* Suggestion chips */}
-    <div className="mt-8 flex flex-wrap justify-center gap-2">
-      {[
-        'Search medical literature',
-        'Write a clinical report',
-        'Analyze patient data',
-        'Create a presentation',
-      ].map((suggestion) => (
-        <div
-          key={suggestion}
-          className="px-3.5 py-2 rounded-xl bg-zinc-900/80 border border-zinc-800/60 text-xs text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 transition-colors cursor-default"
-        >
-          {suggestion}
-        </div>
-      ))}
-    </div>
-  </div>
-);
+  );
+};

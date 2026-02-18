@@ -36,20 +36,20 @@ export const ThinkingIndicator: React.FC = () => {
       className="flex gap-3 py-4"
     >
       {/* Avatar */}
-      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shrink-0 shadow-[0_0_12px_rgba(37,99,235,0.25)]">
+      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center shrink-0 shadow-glow-sm">
         <Bot className="w-4 h-4 text-white" />
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-400/70 px-0.5">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-teal-500 dark:text-teal-400 px-0.5">
           MedGemma
         </span>
 
-        <div className="bg-zinc-900/40 border border-zinc-800/40 rounded-2xl rounded-tl-sm px-4 py-3">
+        <div className="bg-ai-bubble border border-ai-bubble-border rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
           {/* Status line */}
           <div className="flex items-center gap-2.5">
-            <Loader2 className="w-4 h-4 text-blue-400 animate-spin shrink-0" />
-            <span className="text-sm text-zinc-400">{statusMessage}</span>
+            <Loader2 className="w-4 h-4 text-accent animate-spin shrink-0" />
+            <span className="text-sm text-foreground-secondary">{statusMessage}</span>
           </div>
 
           {/* Animated dots */}
@@ -57,7 +57,7 @@ export const ThinkingIndicator: React.FC = () => {
             {[0, 1, 2].map((i) => (
               <motion.div
                 key={i}
-                className="w-1.5 h-1.5 rounded-full bg-blue-500/50"
+                className="w-1.5 h-1.5 rounded-full bg-accent/50"
                 animate={{
                   scale: [0.8, 1.2, 0.8],
                   opacity: [0.3, 0.8, 0.3],
