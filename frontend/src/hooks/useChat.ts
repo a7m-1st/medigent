@@ -25,6 +25,11 @@ import { useSSEHandler } from './useSSEHandler';
 // SSE endpoint - uses same base URL as REST API
 const SSE_BASE_URL = import.meta.env.VITE_API_URL || '';
 
+// Default model configuration from environment variables
+const DEFAULT_MODEL_PLATFORM = import.meta.env.VITE_DEFAULT_MODEL_PLATFORM || 'GEMINI';
+const DEFAULT_MODEL_TYPE = import.meta.env.VITE_DEFAULT_MODEL_TYPE || 'GEMINI_3_FLASH';
+const DEFAULT_MODEL_API_URL = import.meta.env.VITE_DEFAULT_MODEL_API_URL || null;
+
 export interface UseChatReturn {
   messages: ChatMessage[];
   isStreaming: boolean;
@@ -243,10 +248,10 @@ export function useChat(): UseChatReturn {
         project_id: projectId || `project-${Date.now()}`,
         question,
         attaches: attaches || [],
-        model_platform: config?.model_platform || 'GEMINI',
-        model_type: config?.model_type || 'GEMINI_3_FLASH',
+        model_platform: config?.model_platform || DEFAULT_MODEL_PLATFORM,
+        model_type: config?.model_type || DEFAULT_MODEL_TYPE,
         api_key: config?.api_key || '',
-        api_url: config?.api_url ?? null,
+        api_url: config?.api_url ?? DEFAULT_MODEL_API_URL,
         language: config?.language || 'en',
         browser_port: config?.browser_port || 9222,
         max_retries: config?.max_retries || 3,
