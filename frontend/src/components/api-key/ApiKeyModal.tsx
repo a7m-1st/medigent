@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
   DialogDescription,
   DialogFooter
 } from '@/components/ui/dialog';
@@ -29,18 +29,18 @@ export const ApiKeyModal: React.FC = () => {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={setModalOpen}>
-      <DialogContent className="sm:max-w-md bg-zinc-900 border-zinc-800 text-zinc-100">
+      <DialogContent className="sm:max-w-md bg-card border-border text-foreground">
         <DialogHeader>
-          <div className="mx-auto w-12 h-12 bg-blue-500/10 rounded-full flex items-center justify-center mb-4">
-            <Key className="w-6 h-6 text-blue-500" />
+          <div className="mx-auto w-12 h-12 bg-accent-light rounded-full flex items-center justify-center mb-4">
+            <Key className="w-6 h-6 text-accent" />
           </div>
           <DialogTitle className="text-2xl font-bold text-center">Gemini API Key</DialogTitle>
-          <DialogDescription className="text-zinc-400 text-center">
-            Enter your Google Gemini API key to start using MedGemma. 
+          <DialogDescription className="text-foreground-muted text-center">
+            Enter your Google Gemini API key to start using MedGemma.
             Your key is stored locally in your browser.
           </DialogDescription>
         </DialogHeader>
-        
+
         <form onSubmit={handleSubmit} className="space-y-4 py-4">
           <div className="space-y-2">
             <Input
@@ -48,14 +48,14 @@ export const ApiKeyModal: React.FC = () => {
               placeholder="Enter your API key..."
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              className="bg-zinc-800 border-zinc-700 text-zinc-100 focus:ring-blue-500"
+              className="bg-input border-input-border text-foreground focus:ring-accent"
               autoFocus
             />
           </div>
           <DialogFooter className="sm:justify-center">
-            <Button 
-              type="submit" 
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium"
+            <Button
+              type="submit"
+              className="w-full bg-accent hover:bg-accent-hover text-accent-foreground font-medium"
               disabled={!key.trim()}
             >
               <ShieldCheck className="w-4 h-4 mr-2" />
@@ -63,9 +63,9 @@ export const ApiKeyModal: React.FC = () => {
             </Button>
           </DialogFooter>
         </form>
-        
-        <div className="text-xs text-center text-zinc-500 mt-2">
-          Don't have a key? Get one from the <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Google AI Studio</a>.
+
+        <div className="text-xs text-center text-foreground-muted mt-2">
+          Don't have a key? Get one from the <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Google AI Studio</a>.
         </div>
       </DialogContent>
     </Dialog>

@@ -41,137 +41,19 @@ from app.service.task import (
     set_current_task_id,
 )
 from app.utils.event_loop_utils import set_main_event_loop
-from app.utils.file_utils import get_working_directory
+from app.utils.file_utils import get_working_directory, process_attaches
+from app.utils.triage import (
+    ComplexityLevel,
+    TriageResult,
+    evaluate_task_complexity,
+)
 from app.utils.workforce import Workforce
 
 logger = logging.getLogger("chat_service")
 MAX_CONVERSATION_CONTEXT_LENGTH = 100000
 
-
-def is_base64_string(s: str) -> bool:
-    """Check if a string is base64 encoded.
-
-    Args:
-        s: String to check
-
-    Returns:
-        True if string appears to be base64 encoded
-    """
-    if not s:
-        return False
-    # Check for data URI scheme
-    if s.startswith("data:"):
-        return True
-    # Check for raw base64 (no spaces, length divisible by 4 when padded)
-    s = s.strip()
-    if len(s) < 4:
-        return False
-    # Simple heuristic: base64 strings contain only alphanumeric chars + + / =
-    base64_chars = set(
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
-    )
-    return all(c in base64_chars for c in s)
-
-
-def decode_base64_attachment(
-    base64_string: str, save_dir: str, project_id: str, task_id: str
-) -> str | None:
-    """Decode base64 string and save to file.
-
-    Args:
-        base64_string: Base64 encoded string (with or without data URI prefix)
-        save_dir: Directory to save the file
-        project_id: Project ID for naming
-        task_id: Task ID for naming
-
-    Returns:
-        Path to saved file, or None if failed
-    """
-    try:
-        # Handle data URI scheme: data:image/png;base64,XXXXX
-        if base64_string.startswith("data:"):
-            # Extract mime type and data
-            header, data = base64_string.split(",", 1)
-            # Extract extension from mime type (e.g., image/png -> png)
-            mime_parts = header.split(";")
-            mime_type = (
-                mime_parts[0] if mime_parts else "application/octet-stream"
-            )
-            ext = mime_type.split("/")[-1]
-            if ext == "jpeg":
-                ext = "jpg"
-        else:
-            # Raw base64 - assume binary data
-            data = base64_string
-            ext = "bin"
-
-        # Decode
-        file_data = base64.b64decode(data)
-
-        # Generate filename
-        filename = f"attachment_{project_id}_{task_id}.{ext}"
-        filepath = Path(save_dir) / filename
-
-        # Ensure directory exists
-        Path(save_dir).mkdir(parents=True, exist_ok=True)
-
-        # Save file
-        with open(filepath, "wb") as f:
-            f.write(file_data)
-
-        logger.info(
-            f"Decoded base64 attachment: {filename}",
-            extra={"project_id": project_id, "task_id": task_id},
-        )
-
-        return str(filepath)
-
-    except Exception as e:
-        logger.error(
-            f"Failed to decode base64 attachment: {e}",
-            extra={"project_id": project_id, "task_id": task_id},
-        )
-        return None
-
-
-def process_attachments(
-    attaches: list[str], save_dir: str, project_id: str, task_id: str
-) -> list[str]:
-    """Process attachments, decoding base64 strings to files.
-
-    Args:
-        attaches: List of attachment strings (URLs, paths, or base64)
-        save_dir: Directory to save decoded files
-        project_id: Project ID
-        task_id: Task ID
-
-    Returns:
-        List of file paths (original paths for URLs/paths,
-        decoded paths for base64)
-    """
-    processed = []
-
-    for attach in attaches:
-        if not attach:
-            continue
-
-        if is_base64_string(attach):
-            # Decode base64 and save
-            filepath = decode_base64_attachment(
-                attach, save_dir, project_id, task_id
-            )
-            if filepath:
-                processed.append(filepath)
-            else:
-                logger.warning(
-                    f"Failed to process base64 attachment, skipping",
-                    extra={"project_id": project_id, "task_id": task_id},
-                )
-        else:
-            # Keep original (URL or file path)
-            processed.append(attach)
-
-    return processed
+# Feature flag: Enable dynamic task routing based on complexity
+ENABLE_DYNAMIC_ROUTING = True
 
 
 async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
@@ -346,15 +228,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 # tracer.start()
                 if start_event_loop is True:
                     question = options.question
-                    attaches_to_use = options.attaches
-                    # Process base64 attachments
-                    save_dir = options.file_save_path("attachments")
-                    attaches_to_use = process_attachments(
-                        attaches_to_use,
-                        save_dir,
-                        options.project_id,
-                        options.task_id,
-                    )
+                    attaches_raw = options.attaches
                     logger.info(
                         "[NEW-QUESTION] Initial question"
                         " from options.question: "
@@ -364,7 +238,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 else:
                     assert isinstance(item, ActionImproveData)
                     question = item.data.question
-                    attaches_to_use = (
+                    attaches_raw = (
                         item.data.attaches
                         if item.data.attaches
                         else options.attaches
@@ -382,6 +256,17 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         "question from "
                         "ActionImproveData: "
                         f"'{question[:100]}...'"
+                    )
+
+                # Process attachments: convert base64 images to file paths
+                working_directory = get_working_directory(options)
+                attaches_to_use = process_attaches(
+                    attaches_raw, working_directory
+                ) if attaches_raw else []
+                if attaches_to_use:
+                    logger.info(
+                        f"[NEW-QUESTION] Processed {len(attaches_to_use)} "
+                        f"attachments: {[Path(p).name for p in attaches_to_use]}"
                     )
 
                 if is_exceeded:
@@ -418,6 +303,59 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
 
                 yield sse_json("confirmed", {"question": question})
 
+                # ============================================================
+                # DYNAMIC ROUTING: Evaluate task complexity before processing
+                # ============================================================
+                suggested_agents: list[str] | None = None
+
+                if ENABLE_DYNAMIC_ROUTING:
+                    triage_result = await perform_triage(
+                        question,
+                        attaches_to_use,
+                        options,
+                        context_for_coordinator,
+                    )
+
+                    # Handle SIMPLE questions - direct answer without workforce
+                    if triage_result.complexity == ComplexityLevel.SIMPLE:
+                        logger.info(
+                            "[TRIAGE] SIMPLE question detected, "
+                            "returning direct answer"
+                        )
+
+                        # Send direct answer as end event
+                        direct_answer = triage_result.direct_answer or (
+                            "I apologize, but I couldn't generate a response. "
+                            "Please try rephrasing your question."
+                        )
+
+                        # Record in conversation history
+                        task_lock.add_conversation("user", question)
+                        task_lock.add_conversation("assistant", direct_answer)
+                        task_lock.last_task_result = direct_answer
+                        task_lock.status = Status.done
+
+                        yield sse_json("end", direct_answer)
+
+                        # Clean up and close SSE
+                        try:
+                            await delete_task_lock(task_lock.id)
+                        except Exception as e:
+                            logger.error(f"Error deleting task lock: {e}")
+                        break
+
+                    # For MODERATE/COMPLEX, continue with workforce flow
+                    suggested_agents = triage_result.suggested_agents
+                    logger.info(
+                        f"[TRIAGE] {triage_result.complexity.value.upper()} "
+                        f"question, proceeding with workforce. "
+                        f"Suggested agents: {suggested_agents}"
+                    )
+
+                # ============================================================
+                # END DYNAMIC ROUTING
+                # ============================================================
+
                 # Check if workforce exists - reuse
                 # it; otherwise create new one
                 if workforce is not None:
@@ -430,7 +368,9 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     logger.info(
                         "[NEW-QUESTION] Creating NEW workforce instance"
                     )
-                    (workforce) = await construct_workforce(options)
+                    # Pass suggested_agents for dynamic agent creation
+                    # If None (routing disabled) or empty, all agents are created
+                    workforce = await construct_workforce(options, suggested_agents)
                 task_lock.status = Status.confirmed
 
                 # Create camel_task for the question
@@ -456,7 +396,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 }
 
                 def on_stream_batch(
-                    new_tasks: list[Task], is_final: bool = False
+                        new_tasks: list[Task], is_final: bool = False
                 ):
                     fresh_tasks = [
                         t
@@ -480,8 +420,8 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         # not in the previous chunk
                         if accumulated_content.startswith(last_content):
                             delta_content = accumulated_content[
-                                len(last_content) :
-                            ]
+                                            len(last_content):
+                                            ]
                         else:
                             delta_content = accumulated_content
 
@@ -939,9 +879,9 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
             )
             yield sse_json("error", {"message": str(e)})
             if (
-                "workforce" in locals()
-                and workforce is not None
-                and workforce._running
+                    "workforce" in locals()
+                    and workforce is not None
+                    and workforce._running
             ):
                 workforce.stop()
         except Exception as e:
@@ -972,7 +912,7 @@ def to_sub_tasks(task: Task, summary_task_content: str):
 
 
 def build_conversation_context(
-    task_lock: TaskLock, header: str = "=== Conversation Context ==="
+        task_lock: TaskLock, header: str = "=== Conversation Context ==="
 ) -> str:
     history = getattr(task_lock, "conversation_history", [])
     if not history:
@@ -1095,7 +1035,7 @@ Summary:
 
 
 async def get_task_result_with_optional_summary(
-    task: Task, options: Chat
+        task: Task, options: Chat
 ) -> str:
     """
     Get the task result, with LLM summary if there are multiple subtasks.
@@ -1135,16 +1075,38 @@ async def get_task_result_with_optional_summary(
 
 
 async def construct_workforce(
-    options: Chat,
-) -> tuple[Workforce, ListenChatAgent]:
-    """Construct a workforce with all required agents.
+        options: Chat,
+        required_agents: list[str] | None = None,
+) -> Workforce:
+    """Construct a workforce with required agents.
 
-    This function creates all agents in PARALLEL to minimize startup time.
+    This function creates agents in PARALLEL to minimize startup time.
     Sync functions are run in thread pool, async functions
     are awaited concurrently.
+
+    Args:
+        options: Chat configuration
+        required_agents: List of agent names to create. If None or empty,
+            creates all agents (for COMPLEX tasks). Valid values:
+            - 'browser_agent'
+            - 'developer_agent'
+            - 'document_agent'
+            - 'multi_modal_agent'
+
+    Returns:
+        Configured Workforce instance
     """
-    logger.debug(
-        "construct_workforce started",
+    # Normalize required_agents - if empty or None, create all agents
+    if not required_agents:
+        required_agents = [
+            "browser_agent",
+            "developer_agent",
+            "document_agent",
+            "multi_modal_agent",
+        ]
+
+    logger.info(
+        f"[WORKFORCE] Creating workforce with agents: {required_agents}",
         extra={"project_id": options.project_id, "task_id": options.task_id},
     )
 
@@ -1249,21 +1211,46 @@ the current date.
         )
 
     # ========================================================================
-    # Execute all agent creations in PARALLEL
+    # Execute agent creations in PARALLEL (only for required agents)
     # ========================================================================
 
+    # Always create coordinator, task, and new_worker agents
+    base_tasks = [
+        asyncio.to_thread(_create_coordinator_and_task_agents),
+        asyncio.to_thread(_create_new_worker_agent),
+    ]
+
+    # Dynamically add only required specialist agents
+    # Use lambdas to defer coroutine creation until they're actually needed
+    agent_creation_map = {
+        "browser_agent": lambda: asyncio.to_thread(browser_agent, options),
+        "developer_agent": developer_agent,
+        "document_agent": document_agent,
+        "multi_modal_agent": lambda: asyncio.to_thread(multi_modal_agent, options),
+    }
+
+    # Build list of tasks to execute
+    specialist_tasks = []
+    specialist_names = []
+    for agent_name in required_agents:
+        if agent_name in agent_creation_map:
+            # Call the lambda/function to get the actual coroutine/task
+            # Lambdas capture options, async functions need it passed in
+            agent_creator = agent_creation_map[agent_name]
+            if callable(agent_creator) and agent_name in ("developer_agent", "document_agent"):
+                # Async function - needs options passed in
+                specialist_tasks.append(agent_creator(options))
+            else:
+                # Lambda with options already captured
+                specialist_tasks.append(agent_creator())
+            specialist_names.append(agent_name)
+
+    logger.info(f"[WORKFORCE] Creating {len(specialist_names)} specialist agents: {specialist_names}")
+
     try:
-        # asyncio.gather runs all coroutines concurrently
-        # asyncio.to_thread runs sync functions in
-        # thread pool without blocking event loop
-        results = await asyncio.gather(
-            asyncio.to_thread(_create_coordinator_and_task_agents),
-            asyncio.to_thread(_create_new_worker_agent),
-            asyncio.to_thread(browser_agent, options),
-            developer_agent(options),
-            document_agent(options),
-            asyncio.to_thread(multi_modal_agent, options),
-        )
+        # Run all agent creations in parallel
+        all_tasks = base_tasks + specialist_tasks
+        results = await asyncio.gather(*all_tasks)
     except Exception as e:
         logger.error(
             f"Failed to create agents in parallel: {e}", exc_info=True
@@ -1272,21 +1259,17 @@ the current date.
     finally:
         # Always clear event loop reference after
         # parallel agent creation completes.
-        # This prevents stale references and
-        # potential cross-request interference
         set_main_event_loop(None)
 
-    # Unpack results
-    (
-        coord_task_agents,
-        new_worker_agent,
-        searcher,
-        developer,
-        documenter,
-        multi_modaler,
-    ) = results
-
+    # Unpack base results
+    coord_task_agents = results[0]
+    new_worker_agent = results[1]
     coordinator_agent, task_agent = coord_task_agents
+
+    # Unpack specialist agents into a dict
+    specialist_agents = {}
+    for i, agent_name in enumerate(specialist_names):
+        specialist_agents[agent_name] = results[2 + i]
 
     # ========================================================================
     # Create Workforce instance and add workers (must be sequential)
@@ -1310,35 +1293,40 @@ the current date.
         else True,
     )
 
-    # Register workforce metrics callback
-    workforce.add_single_agent_worker(
-        "Developer Agent: A master-level coding assistant with a powerful "
-        "terminal. It can write and execute code, manage files, automate "
-        "desktop tasks, and deploy web applications to solve complex "
-        "technical challenges.",
-        developer,
-    )
-    workforce.add_single_agent_worker(
-        "Browser Agent: Can search the web, extract webpage content, "
-        "simulate browser actions, and provide relevant information to "
-        "solve the given task.",
-        searcher,
-    )
-    workforce.add_single_agent_worker(
-        "Document Agent: A document processing assistant skilled in creating "
-        "and modifying a wide range of file formats. It can generate "
-        "text-based files/reports (Markdown, JSON, YAML, HTML), "
-        "office documents (Word, PDF), presentations (PowerPoint), and "
-        "data files (Excel, CSV).",
-        documenter,
-    )
-    workforce.add_single_agent_worker(
-        "Multi-Modal Agent: A specialist in media processing. It can "
-        "analyze images and audio, transcribe speech, download videos, and "
-        "generate new images from text prompts.",
-        multi_modaler,
-    )
+    # Worker descriptions for each agent type
+    worker_descriptions = {
+        "developer_agent": (
+            "Developer Agent: A master-level coding assistant with a powerful "
+            "terminal. It can write and execute code, manage files, automate "
+            "desktop tasks, and deploy web applications to solve complex "
+            "technical challenges."
+        ),
+        "browser_agent": (
+            "Browser Agent: Can search the web, extract webpage content, "
+            "simulate browser actions, and provide relevant information to "
+            "solve the given task."
+        ),
+        "document_agent": (
+            "Document Agent: A document processing assistant skilled in creating "
+            "and modifying a wide range of file formats. It can generate "
+            "text-based files/reports (Markdown, JSON, YAML, HTML), "
+            "office documents (Word, PDF), presentations (PowerPoint), and "
+            "data files (Excel, CSV)."
+        ),
+        "multi_modal_agent": (
+            "Multi-Modal Agent: A specialist in media processing. It can "
+            "analyze images and audio, transcribe speech, download videos, and "
+            "generate new images from text prompts."
+        ),
+    }
 
+    # Add only the created specialist agents to workforce
+    for agent_name, agent in specialist_agents.items():
+        description = worker_descriptions.get(agent_name, f"{agent_name}: A specialist agent")
+        workforce.add_single_agent_worker(description, agent)
+        logger.debug(f"[WORKFORCE] Added {agent_name} to workforce")
+
+    logger.info(f"[WORKFORCE] Workforce created with {len(specialist_agents)} specialist agents")
     return workforce
 
 
@@ -1432,3 +1420,99 @@ the current date.
         tool_names=tool_names,
         custom_model_config=custom_model_config,
     )
+
+
+# ============================================================================
+# TRIAGE FUNCTIONS - Dynamic Task Routing
+# ============================================================================
+
+# Medical Assistant Coordinator prompt for triage and direct answering
+MEDICAL_COORDINATOR_PROMPT = """You are MedGemma, a knowledgeable and helpful medical assistant.
+
+<your_role>
+You serve as both a medical information assistant AND a coordinator for complex tasks.
+For simple medical questions, you provide direct, accurate answers.
+For complex tasks requiring specialized tools (image analysis, web search, document creation),
+you coordinate with specialized agents.
+</your_role>
+
+<guidelines>
+- Provide accurate, evidence-based medical information
+- Use clear, accessible language while maintaining medical accuracy
+- Always recommend consulting healthcare professionals for personal medical decisions
+- Be empathetic and supportive in your responses
+- Cite medical sources when appropriate
+- Acknowledge uncertainty when information is limited or evolving
+</guidelines>
+
+<environment>
+- System: {platform_system} ({platform_machine})
+- Working Directory: {working_directory}
+- Current Date: {current_date}
+</environment>
+"""
+
+
+async def perform_triage(
+        question: str,
+        attachments: list[str],
+        options: Chat,
+        conversation_context: str,
+) -> TriageResult:
+    """
+    Perform task complexity triage to determine the best processing path.
+
+    Args:
+        question: The user's question
+        attachments: List of attached file paths
+        options: Chat configuration options
+        conversation_context: Previous conversation context
+
+    Returns:
+        TriageResult with complexity level and optional direct answer
+    """
+    logger.info(f"[TRIAGE] Starting triage for question: {question[:100]}...")
+
+    working_directory = get_working_directory(options)
+
+    # Build the triage coordinator prompt
+    triage_prompt = MEDICAL_COORDINATOR_PROMPT.format(
+        platform_system=platform.system(),
+        platform_machine=platform.machine(),
+        working_directory=working_directory,
+        current_date=datetime.date.today(),
+    )
+
+    # Create a lightweight coordinator agent for triage
+    # No tools needed - just evaluation and direct answering
+    triage_agent = agent_model(
+        "triage_coordinator",
+        triage_prompt,
+        options,
+        tools=[],  # No tools for triage - pure LLM evaluation
+    )
+
+    try:
+        # Perform complexity evaluation
+        result = await evaluate_task_complexity(
+            coordinator_agent=triage_agent,
+            question=question,
+            attachments=attachments if attachments else None,
+        )
+
+        logger.info(
+            f"[TRIAGE] Completed: complexity={result.complexity.value}, "
+            f"reasoning={result.reasoning[:100]}..."
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"[TRIAGE] Error during triage: {e}", exc_info=True)
+        # Default to COMPLEX on error (most conservative)
+        return TriageResult(
+            complexity=ComplexityLevel.COMPLEX,
+            reasoning=f"Triage error: {str(e)}. Defaulting to full processing.",
+            suggested_agents=[],
+            direct_answer=None,
+        )

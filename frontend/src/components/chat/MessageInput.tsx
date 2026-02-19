@@ -6,6 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Send, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+// Default model configuration from environment variables
+const DEFAULT_MODEL_PLATFORM = import.meta.env.VITE_DEFAULT_MODEL_PLATFORM || 'GEMINI';
+const DEFAULT_MODEL_TYPE = import.meta.env.VITE_DEFAULT_MODEL_TYPE || 'GEMINI_3_FLASH';
+const DEFAULT_MODEL_API_URL = import.meta.env.VITE_DEFAULT_MODEL_API_URL || null;
+
 export function MessageInput() {
   const [input, setInput] = useState('');
   const { startChat, stopChat, isStreaming, isLoading, currentProjectId } = useChat();
@@ -26,9 +31,10 @@ export function MessageInput() {
       task_id: `task-${Date.now()}`,
       question: content,
       attaches: [],
-      model_platform: 'GEMINI',
-      model_type: 'GEMINI_3_FLASH',
+      model_platform: DEFAULT_MODEL_PLATFORM,
+      model_type: DEFAULT_MODEL_TYPE,
       api_key: '',
+      api_url: DEFAULT_MODEL_API_URL,
       language: 'en',
       browser_port: 9222,
       max_retries: 3,

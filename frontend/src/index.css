@@ -2,27 +2,211 @@
 
 @theme {
   --font-sans: system-ui, Avenir, Helvetica, Arial, sans-serif;
+
+  /* Custom colors for theme system */
+  --color-background: var(--bg);
+  --color-background-secondary: var(--bg-secondary);
+  --color-background-tertiary: var(--bg-tertiary);
+
+  --color-foreground: var(--fg);
+  --color-foreground-secondary: var(--fg-secondary);
+  --color-foreground-muted: var(--fg-muted);
+
+  --color-card: var(--card-bg);
+  --color-card-hover: var(--card-bg-hover);
+  --color-card-border: var(--card-border-color);
+
+  --color-border: var(--border-color);
+  --color-border-hover: var(--border-color-hover);
+  --color-border-focus: var(--border-color-focus);
+
+  --color-accent: var(--accent-color);
+  --color-accent-hover: var(--accent-color-hover);
+  --color-accent-light: var(--accent-color-light);
+  --color-accent-foreground: var(--accent-fg);
+
+  --color-success: var(--success-color);
+  --color-success-light: var(--success-color-light);
+  --color-warning: var(--warning-color);
+  --color-warning-light: var(--warning-color-light);
+  --color-error: var(--error-color);
+  --color-error-light: var(--error-color-light);
+  --color-info: var(--info-color);
+  --color-info-light: var(--info-color-light);
+
+  --color-user-bubble: var(--user-bg);
+  --color-user-bubble-border: var(--user-border);
+  --color-user-bubble-text: var(--user-fg);
+
+  --color-ai-bubble: var(--ai-bg);
+  --color-ai-bubble-border: var(--ai-border);
+
+  --color-input: var(--input-bg);
+  --color-input-border: var(--input-border-color);
+
+  --color-sidebar: var(--sidebar-bg);
+  --color-sidebar-border: var(--sidebar-border-color);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-sidebar-active: var(--sidebar-active);
+
+  /* Box shadows */
+  --shadow-glow-sm: 0 0 10px rgba(59, 130, 246, 0.15);
+  --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.2);
+  --shadow-glow-lg: 0 0 40px rgba(59, 130, 246, 0.25);
+  --shadow-glow-success: 0 0 15px rgba(34, 197, 94, 0.3);
+  --shadow-glow-error: 0 0 15px rgba(239, 68, 68, 0.3);
+
+  /* Animations */
+  --animate-ping-slow: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 
+/* Light theme (default) */
 :root {
   font-family: var(--font-sans);
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: dark;
-  background-color: #09090b;
-
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* Color scheme */
+  color-scheme: light;
+
+  /* Background colors */
+  --bg: #fafafa;
+  --bg-secondary: #f5f5f5;
+  --bg-tertiary: #f1f1f1;
+
+  /* Foreground colors */
+  --fg: #171717;
+  --fg-secondary: #404040;
+  --fg-muted: #737373;
+
+  /* Card colors */
+  --card-bg: #ffffff;
+  --card-bg-hover: #fafafa;
+  --card-border-color: #e5e5e5;
+
+  /* Border colors */
+  --border-color: #e5e5e5;
+  --border-color-hover: #d4d4d4;
+  --border-color-focus: #3b82f6;
+
+  /* Accent colors */
+  --accent-color: #3b82f6;
+  --accent-color-hover: #2563eb;
+  --accent-color-light: #eff6ff;
+  --accent-fg: #ffffff;
+
+  /* Status colors */
+  --success-color: #22c55e;
+  --success-color-light: #f0fdf4;
+  --warning-color: #eab308;
+  --warning-color-light: #fefce8;
+  --error-color: #ef4444;
+  --error-color-light: #fef2f2;
+  --info-color: #3b82f6;
+  --info-color-light: #eff6ff;
+
+  /* User message */
+  --user-bg: #eff6ff;
+  --user-border: #bfdbfe;
+  --user-fg: #1e40af;
+
+  /* AI message */
+  --ai-bg: #ffffff;
+  --ai-border: #e5e5e5;
+
+  /* Input colors */
+  --input-bg: #ffffff;
+  --input-border-color: #d4d4d4;
+
+  /* Sidebar */
+  --sidebar-bg: #fafafa;
+  --sidebar-border-color: #e5e5e5;
+  --sidebar-hover: #f1f1f1;
+  --sidebar-active: #eff6ff;
+
+  /* Scrollbar */
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(0, 0, 0, 0.1);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.2);
 }
 
+/* Dark theme */
+:root.dark {
+  color-scheme: dark;
+
+  /* Background colors */
+  --bg: #09090b;
+  --bg-secondary: #18181b;
+  --bg-tertiary: #27272a;
+
+  /* Foreground colors */
+  --fg: #fafafa;
+  --fg-secondary: #d4d4d8;
+  --fg-muted: #71717a;
+
+  /* Card colors */
+  --card-bg: #18181b;
+  --card-bg-hover: #27272a;
+  --card-border-color: #3f3f46;
+
+  /* Border colors */
+  --border-color: #27272a;
+  --border-color-hover: #3f3f46;
+  --border-color-focus: #3b82f6;
+
+  /* Accent colors */
+  --accent-color: #3b82f6;
+  --accent-color-hover: #60a5fa;
+  --accent-color-light: #1e3a8a;
+  --accent-fg: #ffffff;
+
+  /* Status colors */
+  --success-color: #22c55e;
+  --success-color-light: #14532d;
+  --warning-color: #eab308;
+  --warning-color-light: #713f12;
+  --error-color: #ef4444;
+  --error-color-light: #7f1d1d;
+  --info-color: #3b82f6;
+  --info-color-light: #1e3a8a;
+
+  /* User message */
+  --user-bg: #27272a;
+  --user-border: #3f3f46;
+  --user-fg: #fafafa;
+
+  /* AI message */
+  --ai-bg: #18181b;
+  --ai-border: #27272a;
+
+  /* Input colors */
+  --input-bg: #18181b;
+  --input-border-color: #3f3f46;
+
+  /* Sidebar */
+  --sidebar-bg: #000000;
+  --sidebar-border-color: #27272a;
+  --sidebar-hover: #18181b;
+  --sidebar-active: #1e3a8a;
+
+  /* Scrollbar */
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.1);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
+}
+
+/* Base styles */
 body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background-color: #09090b;
+  background-color: var(--bg);
+  color: var(--fg);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 #root {
@@ -30,19 +214,144 @@ body {
   height: 100vh;
 }
 
+/* Custom scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 4px;
+  width: 6px;
+  height: 6px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--scrollbar-track);
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--scrollbar-thumb);
   border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Global transition for theme switching */
+*, *::before, *::after {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-duration: 0.15s;
+  transition-timing-function: ease-out;
+}
+
+/* Agent status animations */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+/* Timeline connector line */
+.timeline-connector {
+  position: relative;
+}
+
+.timeline-connector::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 24px;
+  bottom: -8px;
+  width: 2px;
+  background: linear-gradient(to bottom, var(--border-color), transparent);
+}
+
+.timeline-connector:last-child::before {
+  display: none;
+}
+
+/* Terminal-style text */
+.terminal-text {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono', 'Source Code Pro', monospace;
+}
+
+/* Focus ring utility */
+.focus-ring {
+  outline: none;
+}
+
+.focus-ring:focus-visible {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-color);
+}
+
+/* Custom utility classes for theme colors */
+@layer utilities {
+  .bg-background { background-color: var(--bg); }
+  .bg-background-secondary { background-color: var(--bg-secondary); }
+  .bg-background-tertiary { background-color: var(--bg-tertiary); }
+
+  .text-foreground { color: var(--fg); }
+  .text-foreground-secondary { color: var(--fg-secondary); }
+  .text-foreground-muted { color: var(--fg-muted); }
+
+  .bg-card { background-color: var(--card-bg); }
+  .bg-card-hover { background-color: var(--card-bg-hover); }
+  .border-card-border { border-color: var(--card-border-color); }
+
+  .border-border { border-color: var(--border-color); }
+  .border-border-hover { border-color: var(--border-color-hover); }
+  .border-border-focus { border-color: var(--border-color-focus); }
+
+  .bg-accent { background-color: var(--accent-color); }
+  .bg-accent-hover { background-color: var(--accent-color-hover); }
+  .bg-accent-light { background-color: var(--accent-color-light); }
+  .text-accent { color: var(--accent-color); }
+  .text-accent-foreground { color: var(--accent-fg); }
+  .border-accent { border-color: var(--accent-color); }
+
+  .bg-success { background-color: var(--success-color); }
+  .bg-success-light { background-color: var(--success-color-light); }
+  .text-success { color: var(--success-color); }
+  .border-success { border-color: var(--success-color); }
+
+  .bg-warning { background-color: var(--warning-color); }
+  .bg-warning-light { background-color: var(--warning-color-light); }
+  .text-warning { color: var(--warning-color); }
+  .border-warning { border-color: var(--warning-color); }
+
+  .bg-error { background-color: var(--error-color); }
+  .bg-error-light { background-color: var(--error-color-light); }
+  .text-error { color: var(--error-color); }
+  .border-error { border-color: var(--error-color); }
+
+  .bg-info { background-color: var(--info-color); }
+  .bg-info-light { background-color: var(--info-color-light); }
+  .text-info { color: var(--info-color); }
+  .border-info { border-color: var(--info-color); }
+
+  .bg-user-bubble { background-color: var(--user-bg); }
+  .border-user-bubble-border { border-color: var(--user-border); }
+  .text-user-bubble-text { color: var(--user-fg); }
+
+  .bg-ai-bubble { background-color: var(--ai-bg); }
+  .border-ai-bubble-border { border-color: var(--ai-border); }
+
+  .bg-input { background-color: var(--input-bg); }
+  .border-input-border { border-color: var(--input-border-color); }
+
+  .bg-sidebar { background-color: var(--sidebar-bg); }
+  .border-sidebar-border { border-color: var(--sidebar-border-color); }
+  .bg-sidebar-hover { background-color: var(--sidebar-hover); }
+  .bg-sidebar-active { background-color: var(--sidebar-active); }
+
+  .shadow-glow-sm { box-shadow: var(--shadow-glow-sm); }
+  .shadow-glow { box-shadow: var(--shadow-glow); }
+  .shadow-glow-lg { box-shadow: var(--shadow-glow-lg); }
+  .shadow-glow-success { box-shadow: var(--shadow-glow-success); }
+  .shadow-glow-error { box-shadow: var(--shadow-glow-error); }
 }

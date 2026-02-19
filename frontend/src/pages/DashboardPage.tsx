@@ -1,111 +1,213 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiKeyModal } from '@/components/api-key/ApiKeyModal';
 import { TaskInputPanel } from '@/components/chat/TaskInputPanel';
-import { TaskDecompositionPanel } from '@/components/task-panel/TaskDecompositionPanel';
-import { AgentDashboard } from '@/components/agents/AgentDashboard';
+import { MonitoringPanel } from '@/components/task-panel/MonitoringPanel';
 import { BrowserSnapshots } from '@/components/resources/BrowserSnapshots';
+import { ConversationPanel } from '@/components/conversation/ConversationPanel';
 import { ErrorBanner } from '@/components/layout/ErrorBanner';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
-import { 
-  LayoutDashboard, 
-  Settings, 
-  History, 
-  HelpCircle
+import { useUIStore } from '@/stores';
+import {
+  LayoutDashboard,
+  Settings,
+  History,
+  HelpCircle,
+  PanelRightClose,
+  PanelRightOpen,
+  Moon,
+  Sun,
+  Monitor,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { AnimatePresence, motion } from 'framer-motion';
+
+// Responsive breakpoint
+const MOBILE_BREAKPOINT = 1024;
 
 export const DashboardPage: React.FC = () => {
+  const [rightSidebarOpen, setRightSidebarOpen] = React.useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+  const { theme, setTheme, resolvedTheme } = useUIStore();
+
+  // Handle responsive layout
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < MOBILE_BREAKPOINT;
+      setIsMobile(mobile);
+      if (mobile && rightSidebarOpen) {
+        setRightSidebarOpen(false);
+      }
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [rightSidebarOpen]);
+
+  // Cycle through themes: light -> dark -> system
+  const cycleTheme = () => {
+    const themes: ('light' | 'dark' | 'system')[] = ['light', 'dark', 'system'];
+    const currentIndex = themes.indexOf(theme);
+    const nextTheme = themes[(currentIndex + 1) % themes.length];
+    setTheme(nextTheme);
+  };
+
+  const ThemeIcon = theme === 'system' ? Monitor : resolvedTheme === 'dark' ? Moon : Sun;
 
   return (
-    <div className="h-screen w-screen bg-zinc-950 text-zinc-100 flex overflow-hidden">
+    <div className="h-screen w-screen bg-background text-foreground flex overflow-hidden">
       <ApiKeyModal />
 
-      {/* Sidebar Navigation */}
-      <aside className="w-16 flex flex-col items-center py-6 border-r border-white/5 bg-black z-50 shrink-0">
-        <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center mb-10 shadow-[0_0_20px_rgba(37,99,235,0.3)]">
-          <LayoutDashboard className="w-6 h-6 text-white" />
+      {/* Left Sidebar Navigation */}
+      <aside className="w-16 flex flex-col items-center py-6 border-r border-border bg-sidebar z-50 shrink-0">
+        <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center mb-10 shadow-glow">
+          <LayoutDashboard className="w-6 h-6 text-accent-foreground" />
         </div>
-        
+
         <div className="flex-1 flex flex-col gap-6">
           <NavIcon icon={<History className="w-5 h-5" />} active />
-          <NavIcon icon={<Settings className="w-5 h-5" />} onClick={() => useApiConfigStore.getState().clearApiKey()} />
+          <NavIcon
+            icon={<Settings className="w-5 h-5" />}
+            onClick={() => useApiConfigStore.getState().clearApiKey()}
+          />
           <Link to="/thank-you">
             <NavIcon icon={<HelpCircle className="w-5 h-5" />} />
           </Link>
         </div>
 
+        {/* Theme toggle at bottom */}
         <div className="mt-auto">
-          {/* Bottom indicator or avatar could go here */}
+          <NavIcon
+            icon={<ThemeIcon className="w-5 h-5" />}
+            onClick={cycleTheme}
+            tooltip={`Theme: ${theme}`}
+          />
         </div>
       </aside>
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col relative min-w-0">
-        {/* Top Header */}
-        <header className="h-14 border-b border-white/5 bg-zinc-950/50 backdrop-blur-md flex items-center justify-between px-6 z-30 shrink-0">
+        {/* Header */}
+        <header className="h-14 border-b border-border bg-background/80 backdrop-blur-md flex items-center justify-between px-6 z-30 shrink-0">
           <div className="flex items-center gap-4">
-            <h2 className="text-sm font-bold tracking-tight text-zinc-300">MEDGEMMA <span className="text-blue-500">v2.0</span></h2>
-            <div className="h-4 w-px bg-white/10" />
+            <h2 className="text-sm font-bold tracking-tight text-foreground-secondary">
+              MEDGEMMA <span className="text-accent">v2.0</span>
+            </h2>
+            <div className="h-4 w-px bg-border" />
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">System Ready</span>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
+              </span>
+              <span className="text-[10px] font-mono text-foreground-muted uppercase tracking-widest">
+                System Ready
+              </span>
             </div>
           </div>
-          
-          <div className="flex items-center gap-3">
-            {/* Action buttons removed as per request */}
+
+          <div className="flex items-center gap-2">
+            {/* Right sidebar toggle */}
+            <button
+              onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
+              className={cn(
+                'p-2 rounded-lg transition-colors',
+                rightSidebarOpen
+                  ? 'text-foreground-secondary hover:text-foreground hover:bg-background-secondary'
+                  : 'text-foreground-muted hover:text-foreground-secondary hover:bg-background-secondary'
+              )}
+              title={
+                rightSidebarOpen
+                  ? 'Hide monitoring panel'
+                  : 'Show monitoring panel'
+              }
+            >
+              {rightSidebarOpen ? (
+                <PanelRightClose className="w-4 h-4" />
+              ) : (
+                <PanelRightOpen className="w-4 h-4" />
+              )}
+            </button>
           </div>
         </header>
 
-        {/* Global Error Banner */}
+        {/* Error Banner */}
         <ErrorBanner />
 
-        {/* Main Dashboard Layout */}
+        {/* Main Layout: Conversation + Right Sidebar */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Left: Agent Dashboard + Chat */}
+          {/* Center: Conversation Panel */}
           <div className="flex-1 flex flex-col min-w-0">
-            {/* Top 70%: Agent Status Grid */}
-            <div className="flex-[70] flex flex-col border-b border-white/5 overflow-hidden">
-              <div className="flex-1 p-4 overflow-auto">
-                <AgentDashboard />
+            {/* Scrollable messages */}
+            <ConversationPanel />
+
+            {/* Input Panel - anchored at bottom */}
+            <div className="border-t border-border bg-background shrink-0">
+              <div className="max-w-3xl mx-auto">
+                <TaskInputPanel />
               </div>
-            </div>
-            
-            {/* Bottom: Task Input */}
-            
-            <div className="h-[120px] flex-shrink-0 border-t border-white/5 bg-zinc-950">
-              
-              <TaskInputPanel />
             </div>
           </div>
 
-          {/* Right: Task Map + Resources */}
-          <aside className="w-[500px] bg-zinc-950 border-l border-white/5 flex flex-col shrink-0">
-            {/* Top: Task Decomposition Panel */}
-            <div className="flex-1 flex flex-col border-b border-white/5 overflow-hidden">
-              <TaskDecompositionPanel />
-            </div>
-            
-            {/* Bottom: Browser Snapshots */}
-            <div className="h-2/5 overflow-hidden">
-              <BrowserSnapshots />
-            </div>
-          </aside>
+          {/* Right: Monitoring Sidebar */}
+          <AnimatePresence mode="wait">
+            {rightSidebarOpen && (
+              <motion.aside
+                initial={{ width: 0, opacity: 0 }}
+                animate={{ width: isMobile ? '100%' : 420, opacity: 1 }}
+                exit={{ width: 0, opacity: 0 }}
+                transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
+                className={cn(
+                  "bg-background border-l border-border flex flex-col shrink-0 overflow-hidden",
+                  isMobile && "absolute inset-0 z-40"
+                )}
+              >
+                <div className={cn("flex flex-col h-full", isMobile ? "w-full" : "w-[420px]")}>
+                  {/* Mobile close button */}
+                  {isMobile && (
+                    <div className="p-3 border-b border-border flex justify-end">
+                      <button
+                        onClick={() => setRightSidebarOpen(false)}
+                        className="p-2 rounded-lg hover:bg-background-secondary text-foreground-muted"
+                      >
+                        <PanelRightClose className="w-5 h-5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Monitoring Panel (Task Map + Agent Activity) */}
+                  <div className="flex-1 flex flex-col border-b border-border overflow-hidden min-h-0">
+                    <MonitoringPanel />
+                  </div>
+
+                  {/* Browser Snapshots */}
+                  <div className="h-[240px] overflow-hidden shrink-0">
+                    <BrowserSnapshots />
+                  </div>
+                </div>
+              </motion.aside>
+            )}
+          </AnimatePresence>
         </div>
       </main>
     </div>
   );
 };
 
-const NavIcon: React.FC<{ icon: React.ReactNode; active?: boolean; onClick?: () => void }> = ({ icon, active, onClick }) => (
-  <button 
+const NavIcon: React.FC<{
+  icon: React.ReactNode;
+  active?: boolean;
+  onClick?: () => void;
+  tooltip?: string;
+}> = ({ icon, active, onClick, tooltip }) => (
+  <button
     onClick={onClick}
+    title={tooltip}
     className={cn(
-      "p-3 rounded-xl transition-all duration-300 group",
-      active 
-        ? "bg-blue-600/10 text-blue-500" 
-        : "text-zinc-600 hover:text-zinc-300 hover:bg-white/5"
+      'p-3 rounded-xl transition-all duration-300 group',
+      active
+        ? 'bg-accent/10 text-accent'
+        : 'text-foreground-muted hover:text-foreground-secondary hover:bg-sidebar-hover'
     )}
   >
     {icon}

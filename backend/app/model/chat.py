@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Literal
@@ -44,9 +45,10 @@ class Chat(BaseModel):
     project_id: str
     question: str
     attaches: list[str] = []
-    model_platform: str
-    model_type: str
-    api_key: str
+    # Model config fields: optional, fall back to env vars if not provided
+    model_platform: str = ""
+    model_type: str = ""
+    api_key: str = ""
     # for cloud version, user don't need to set api_url
     api_url: str | None = None
     language: str = "en"
@@ -63,6 +65,26 @@ class Chat(BaseModel):
     # User-specific search engine configurations
     # (e.g., GOOGLE_API_KEY, SEARCH_ENGINE_ID)
     search_config: dict[str, str] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def apply_env_defaults(cls, data: dict) -> dict:
+        """Fill model config from environment variables when not
+        provided by the frontend."""
+        if isinstance(data, dict):
+            if not data.get("api_key"):
+                data["api_key"] = os.getenv("GEMINI_API_KEY", "")
+            if not data.get("model_platform"):
+                data["model_platform"] = os.getenv(
+                    "MODEL_PLATFORM", ""
+                )
+            if not data.get("model_type"):
+                data["model_type"] = os.getenv("MODEL_TYPE", "")
+            if not data.get("api_url"):
+                env_url = os.getenv("API_URL", "")
+                if env_url:
+                    data["api_url"] = env_url
+        return data
 
     @field_validator("model_platform")
     @classmethod
@@ -89,7 +111,8 @@ class Chat(BaseModel):
         except KeyError:
             # Not a valid enum name, return as-is
             logger.debug(
-                f"model_type '{model_type}' is not a valid ModelType enum"
+                f"model_type '{model_type}' is not a"
+                f" valid ModelType enum"
             )
         return model_type
 

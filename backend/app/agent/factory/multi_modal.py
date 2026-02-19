@@ -1,6 +1,9 @@
 import platform
 
 from camel.messages import BaseMessage
+from camel.models import ModelFactory, OpenAIAudioModels
+from camel.toolkits import ToolkitMessageIntegration
+from camel.types import ModelPlatformType
 
 from app.agent.agent_model import agent_model
 from app.agent.listen_chat_agent import logger
@@ -26,8 +29,66 @@ def multi_modal_agent(options: Chat):
         f"in directory: {working_directory}"
     )
 
-    tools = []
-    tool_names = []
+    message_integration = ToolkitMessageIntegration(
+        message_handler=HumanToolkit(
+            options.project_id, Agents.multi_modal_agent
+        ).send_message_to_user
+    )
+    toolkit_model = ModelFactory.create(
+        model_platform=options.model_platform.lower(),
+        model_type=options.model_type,
+        api_key=options.api_key,
+        url=options.api_url,
+    )
+    image_analysis_toolkit = ImageAnalysisToolkit(
+        options.project_id, model=toolkit_model
+    )
+    image_analysis_toolkit = message_integration.register_toolkits(
+        image_analysis_toolkit
+    )
+
+    terminal_toolkit = TerminalToolkit(
+        options.project_id,
+        agent_name=Agents.multi_modal_agent,
+        working_directory=working_directory,
+        safe_mode=True,
+        clone_current_env=True,
+    )
+    terminal_toolkit = message_integration.register_toolkits(terminal_toolkit)
+
+    note_toolkit = NoteTakingToolkit(
+        options.project_id,
+        Agents.multi_modal_agent,
+        working_directory=working_directory,
+    )
+    note_toolkit = message_integration.register_toolkits(note_toolkit)
+    tools = [
+        *image_analysis_toolkit.get_tools(),
+        *HumanToolkit.get_can_use_tools(
+            options.project_id, Agents.multi_modal_agent
+        ),
+        *terminal_toolkit.get_tools(),
+        *note_toolkit.get_tools(),
+    ]
+    # Convert string model_platform to enum for comparison
+    try:
+        model_platform_enum = ModelPlatformType(options.model_platform.lower())
+    except (ValueError, AttributeError):
+        model_platform_enum = None
+
+    if model_platform_enum == ModelPlatformType.OPENAI:
+        audio_analysis_toolkit = AudioAnalysisToolkit(
+            options.project_id,
+            working_directory,
+            OpenAIAudioModels(
+                api_key=options.api_key,
+                url=options.api_url,
+            ),
+        )
+        audio_analysis_toolkit = message_integration.register_toolkits(
+            audio_analysis_toolkit
+        )
+        tools.extend(audio_analysis_toolkit.get_tools())
 
     system_message = MULTI_MODAL_SYS_PROMPT.format(
         platform_system=platform.system(),

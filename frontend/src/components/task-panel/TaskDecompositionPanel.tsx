@@ -9,64 +9,92 @@ import {
   Circle,
   Layers,
   Loader2,
-  TreePine,
   XCircle,
+  Terminal,
+  Image as ImageIcon,
+  Search,
+  FileText,
+  Bot,
 } from 'lucide-react';
 import React from 'react';
 
+// Agent type configuration with colors
+const AGENT_CONFIG: Record<string, { color: string; bgColor: string; icon: typeof Bot }> = {
+  coordinator: { color: 'text-purple-600 dark:text-purple-400', bgColor: 'bg-purple-100 dark:bg-purple-900/30', icon: Activity },
+  vision: { color: 'text-blue-600 dark:text-blue-400', bgColor: 'bg-blue-100 dark:bg-blue-900/30', icon: ImageIcon },
+  browser: { color: 'text-green-600 dark:text-green-400', bgColor: 'bg-green-100 dark:bg-green-900/30', icon: Search },
+  document: { color: 'text-orange-600 dark:text-orange-400', bgColor: 'bg-orange-100 dark:bg-orange-900/30', icon: FileText },
+  default: { color: 'text-accent', bgColor: 'bg-accent-light', icon: Bot },
+};
+
 export const TaskDecompositionPanel: React.FC = () => {
-  const { taskTree: rootTasks, isDecomposing } = useTaskDecompStore();
+  const { taskTree: rootTasks } = useTaskDecompStore();
+
+  // Check if any task is currently running
+  const hasActiveTask = rootTasks?.some(task =>
+    task.state?.toLowerCase() === 'running' ||
+    task.subtasks?.some((st: any) => st.state?.toLowerCase() === 'running')
+  );
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-        <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/5">
-          <div className="flex items-center gap-2">
-            <TreePine className="w-5 h-5 text-emerald-400" />
-            <h2 className="font-semibold text-zinc-100">Task Map</h2>
-          </div>
-          {isDecomposing && (
-            <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
+      {/* Task Tree */}
+      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+        <div className="space-y-2">
+          <AnimatePresence mode="popLayout">
+            {rootTasks && rootTasks.map((task, index) => (
+              <TaskNode
+                key={task.id}
+                task={task}
+                level={0}
+                isLast={index === rootTasks.length - 1}
+              />
+            ))}
+          </AnimatePresence>
+
+          {(!rootTasks || rootTasks.length === 0) && (
+            <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+              <div className="w-12 h-12 rounded-full bg-background-secondary border border-border flex items-center justify-center mb-4">
+                <Layers className="w-6 h-6 text-foreground-muted" />
+              </div>
+              <p className="text-foreground font-medium text-sm">No tasks active</p>
+              <p className="text-foreground-muted text-xs mt-1">Start a conversation to see task decomposition.</p>
+            </div>
           )}
         </div>
+      </div>
 
-        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-          <div className="space-y-4">
-            <AnimatePresence mode="popLayout">
-              {rootTasks && rootTasks.map((task) => (
-                <TaskNode key={task.id} task={task} level={0} />
-              ))}
-            </AnimatePresence>
-            
-            {(!rootTasks || rootTasks.length === 0) && (
-              <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-                <div className="w-12 h-12 rounded-full bg-zinc-900 border border-white/5 flex items-center justify-center mb-4">
-                  <Layers className="w-6 h-6 text-zinc-700" />
-                </div>
-                <p className="text-zinc-300 text-sm font-medium">No tasks active</p>
-                <p className="text-zinc-500 text-xs mt-1">Start a conversation to see task decomposition.</p>
-              </div>
-            )}
-          </div>
+      {/* Terminal-style Log Footer */}
+      <div className="p-3 border-t border-border bg-background-tertiary">
+        <div className="flex items-center gap-2 text-[10px] text-foreground-muted uppercase tracking-widest font-bold mb-2">
+          <Terminal className="w-3.5 h-3.5" />
+          <span>System Output</span>
         </div>
-
-        <div className="p-4 border-t border-white/10 bg-white/5">
-          <div className="flex items-center gap-2 text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
-            <Activity className="w-3.5 h-3.5" />
-            <span>Operational Tree</span>
-          </div>
+        <div className="terminal-text text-[11px] text-foreground-muted/80 h-16 overflow-y-auto custom-scrollbar">
+          {hasActiveTask ? (
+            <>
+              <div className="text-success">&gt; Agents orchestrating...</div>
+              <div>&gt; Processing multi-modal inputs</div>
+              <div className="animate-pulse">&gt; _</div>
+            </>
+          ) : (
+            <div className="text-foreground-muted">&gt; Awaiting instructions...</div>
+          )}
         </div>
       </div>
+    </div>
   );
 };
 
 interface TaskNodeProps {
-  task: any; // Using any for brevity, should use the Task type from store
+  task: any;
   level: number;
+  isLast?: boolean;
 }
 
-const TaskNode: React.FC<TaskNodeProps> = ({ task, level }) => {
+const TaskNode: React.FC<TaskNodeProps> = ({ task, level, isLast }) => {
   const hasChildren = task.subtasks && task.subtasks.length > 0;
-  
+
   // Map backend states to UI statuses
   const getStatus = () => {
     switch (task.state?.toLowerCase()) {
@@ -77,62 +105,94 @@ const TaskNode: React.FC<TaskNodeProps> = ({ task, level }) => {
       default: return 'waiting';
     }
   };
-  
+
   const status = getStatus();
+
+  // Get agent config
+  const agentType = task.assignedToName?.toLowerCase() || 'default';
+  const agentConfig = AGENT_CONFIG[agentType] || AGENT_CONFIG.default;
+  const AgentIcon = agentConfig.icon;
 
   return (
     <motion.div
       initial={{ opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -10 }}
-      className="space-y-2"
+      className={cn("relative", !isLast && level === 0 && "timeline-connector")}
     >
-      <div 
+      <div
         className={cn(
-          "group flex items-start gap-3 p-2 rounded-lg transition-colors cursor-default",
-          level === 0 ? "bg-white/5" : "hover:bg-white/5"
+          "group flex items-start gap-3 p-3 rounded-lg transition-colors cursor-default",
+          level === 0
+            ? "bg-card border border-card-border hover:border-border-hover"
+            : "hover:bg-background-secondary"
         )}
       >
-        <div className="mt-0.5">
+        {/* Status indicator with timeline dot */}
+        <div className="mt-0.5 relative">
           {status === 'completed' ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            <CheckCircle2 className="w-4 h-4 text-success" />
           ) : status === 'in_progress' ? (
-            <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+            <div className="relative">
+              <Loader2 className="w-4 h-4 text-accent animate-spin" />
+              {/* Ping effect for active */}
+              <span className="absolute inset-0 rounded-full bg-accent/20 animate-pulse-ring" />
+            </div>
           ) : status === 'error' ? (
-            <AlertCircle className="w-4 h-4 text-yellow-500" />
+            <AlertCircle className="w-4 h-4 text-warning" />
           ) : status === 'cancelled' ? (
-            <XCircle className="w-4 h-4 text-zinc-500" />
+            <XCircle className="w-4 h-4 text-foreground-muted" />
           ) : (
-            <Circle className="w-4 h-4 text-zinc-600" />
+            <Circle className="w-4 h-4 text-foreground-muted" />
           )}
         </div>
-        
+
         <div className="flex-1 min-w-0">
+          {/* Task content */}
           <p className={cn(
             "text-sm font-medium leading-tight",
-            status === 'completed' ? "text-zinc-500" 
-              : status === 'cancelled' ? "text-zinc-600 line-through" 
-              : "text-zinc-200"
+            status === 'completed' ? "text-foreground-muted"
+              : status === 'cancelled' ? "text-foreground-muted line-through"
+              : "text-foreground"
           )}>
             {task.content}
           </p>
+
+          {/* Agent tag */}
           {task.assignedToName && (
-            <div className="flex items-center gap-1 mt-1">
-              <span className="text-[9px] text-zinc-500 uppercase tracking-tighter">Assigned:</span>
-              <span className="text-[9px] text-blue-400 font-bold">{task.assignedToName}</span>
+            <div className="flex items-center gap-2 mt-2">
+              <span className={cn(
+                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wide",
+                agentConfig.bgColor,
+                agentConfig.color
+              )}>
+                <AgentIcon className="w-3 h-3" />
+                {task.assignedToName}
+              </span>
+              {status === 'in_progress' && (
+                <span className="text-[9px] text-foreground-muted uppercase tracking-wide animate-pulse">
+                  Processing...
+                </span>
+              )}
             </div>
           )}
         </div>
 
         {hasChildren && (
-          <ChevronRight className="w-3.5 h-3.5 text-zinc-600 group-hover:text-zinc-400 transition-transform" />
+          <ChevronRight className="w-3.5 h-3.5 text-foreground-muted group-hover:text-foreground-secondary transition-colors" />
         )}
       </div>
 
+      {/* Subtasks with connecting line */}
       {hasChildren && (
-        <div className="ml-6 border-l border-white/5 space-y-2 pl-2">
-          {task.subtasks.map((subtask: any) => (
-            <TaskNode key={subtask.id} task={subtask} level={level + 1} />
+        <div className="ml-6 pl-4 border-l-2 border-border space-y-2 mt-2">
+          {task.subtasks.map((subtask: any, idx: number) => (
+            <TaskNode
+              key={subtask.id}
+              task={subtask}
+              level={level + 1}
+              isLast={idx === task.subtasks.length - 1}
+            />
           ))}
         </div>
       )}

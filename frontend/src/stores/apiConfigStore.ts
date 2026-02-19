@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { z } from 'zod';
+import { apiClient } from '@/lib/api';
 
 const API_CONFIG_KEY = 'medgemma_api_config';
 
@@ -16,6 +17,9 @@ interface APIConfigState {
   geminiApiKey: string | null;
   isConfigured: boolean;
   isModalOpen: boolean;
+  backendHasApiKey: boolean;
+  backendModelPlatform: string;
+  backendModelType: string;
   
   // Actions
   setApiKey: (key: string) => void;
@@ -23,19 +27,44 @@ interface APIConfigState {
   loadFromStorage: () => void;
   validateApiKey: (key: string) => boolean;
   setModalOpen: (open: boolean) => void;
+  checkBackendConfig: () => Promise<void>;
 }
 
 export const useApiConfigStore = create<APIConfigState>()(
-  immer((set) => ({
+  immer((set, get) => ({
     // Initial state
     geminiApiKey: null,
     isConfigured: false,
     isModalOpen: false,
+    backendHasApiKey: false,
+    backendModelPlatform: '',
+    backendModelType: '',
     
     setModalOpen: (open) => {
       set((state) => {
         state.isModalOpen = open;
       });
+    },
+    
+    /**
+     * Check if the backend has API key configured via .env
+     */
+    checkBackendConfig: async () => {
+      try {
+        const res = await apiClient.get('/config/status');
+        const { has_api_key, model_platform, model_type } = res.data;
+        set((state) => {
+          state.backendHasApiKey = has_api_key;
+          state.backendModelPlatform = model_platform || '';
+          state.backendModelType = model_type || '';
+          if (has_api_key) {
+            state.isConfigured = true;
+            state.isModalOpen = false;
+          }
+        });
+      } catch (e) {
+        console.warn('Failed to check backend config status:', e);
+      }
     },
     
     /**
@@ -74,12 +103,14 @@ export const useApiConfigStore = create<APIConfigState>()(
       set((state) => {
         state.geminiApiKey = null;
         state.isConfigured = false;
-        state.isModalOpen = true;
+        // Only reopen modal if backend also has no key
+        state.isModalOpen = !get().backendHasApiKey;
       });
     },
     
     /**
-     * Load API config from localStorage on app start
+     * Load API config from localStorage on app start,
+     * then check backend config as fallback
      */
     loadFromStorage: () => {
       try {
@@ -94,19 +125,14 @@ export const useApiConfigStore = create<APIConfigState>()(
               state.isConfigured = true;
               state.isModalOpen = false;
             });
+            return;
           } else {
             console.warn('Invalid stored API config, clearing...');
             localStorage.removeItem(API_CONFIG_KEY);
-            set((state) => {
-              state.isModalOpen = true;
-            });
           }
-        } else {
-          // If no key found, open modal
-          set((state) => {
-            state.isModalOpen = true;
-          });
         }
+        // No valid localStorage key — check backend .env config
+        get().checkBackendConfig();
       } catch (e) {
         console.error('Failed to load API config from localStorage:', e);
       }
@@ -121,6 +147,3 @@ export const useApiConfigStore = create<APIConfigState>()(
     },
   }))
 );
-
-// Auto-load on import (for SSR safety, this should be called in a useEffect)
-// export const loadApiConfig = () => useApiConfigStore.getState().loadFromStorage();
