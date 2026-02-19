@@ -77,4 +77,5 @@ async def document_agent(options: Chat):
             NoteTakingToolkit.toolkit_name(),
             TerminalToolkit.toolkit_name(),
         ],
+        support_native_tool_calling=not options.use_simulated_tool_calling,
     )

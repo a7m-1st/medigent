@@ -115,4 +115,5 @@ def browser_agent(options: Chat):
         ],
         toolkits_to_register_agent=[web_toolkit_for_agent_registration],
         enable_snapshot_clean=True,
+        support_native_tool_calling=not options.use_simulated_tool_calling,
     )

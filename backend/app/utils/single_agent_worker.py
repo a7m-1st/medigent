@@ -1,6 +1,7 @@
 
 
 import datetime
+import json
 import logging
 
 from camel.agents.chat_agent import AsyncStreamingChatAgentResponse
@@ -10,12 +11,89 @@ from camel.societies.workforce.single_agent_worker import (
 )
 from camel.societies.workforce.utils import TaskResult
 from camel.tasks.task import Task, TaskState, is_task_result_insufficient
+from camel.toolkits import FunctionTool
 from camel.utils.context_utils import ContextUtility
 from colorama import Fore
 
 from app.agent.listen_chat_agent import ListenChatAgent
 
 logger = logging.getLogger("single_agent_worker")
+
+
+def _build_simulated_tool_call_prompt(
+    base_task_prompt: str,
+    worker_agent: ListenChatAgent,
+) -> str:
+    """Build a prompt that allows the model to use tools via Hermes
+    <tool_call> format before returning the final JSON result.
+
+    When use_structured_output_handler=True, the normal flow sends a prompt
+    ending in "CRITICAL: respond ONLY with JSON".  That hard constraint
+    prevents the model from emitting the <tool_call> blocks it needs to call
+    tools.  This function replaces that prompt with one that:
+
+    1. Lists available tools in the Hermes format.
+    2. Instructs the model to call any needed tools FIRST.
+    3. Defers the "respond with JSON" requirement to the follow-up turn
+       (after tool results are injected by _ahandle_simulated_tool_calls).
+
+    If the agent has no tools, falls back to a plain JSON-only prompt so
+    the structured output handler can still parse the response.
+    """
+    # Collect tool schemas from the agent's registered internal tools
+    tool_descriptions = []
+    if hasattr(worker_agent, "_internal_tools") and worker_agent._internal_tools:
+        for name, tool in worker_agent._internal_tools.items():
+            if isinstance(tool, FunctionTool):
+                schema = tool.get_openai_tool_schema()
+                func = schema.get("function", {})
+                tool_descriptions.append({
+                    "name": func.get("name", name),
+                    "description": func.get("description", ""),
+                    "parameters": func.get("parameters", {}),
+                })
+
+    if not tool_descriptions:
+        # No tools — keep the normal JSON-only instruction
+        return base_task_prompt + "\n\n" + (
+            "**OUTPUT REQUIREMENTS:**\n"
+            "Return a valid JSON object with exactly two fields:\n"
+            '- "content" (string): your result\n'
+            '- "failed" (boolean): true if you could not complete the task\n\n'
+            "**CRITICAL**: Your entire response must be ONLY the JSON object.\n"
+            "Example: {\"content\": \"Task completed.\", \"failed\": false}\n"
+        )
+
+    tools_json = json.dumps(tool_descriptions, indent=2)
+    return (
+        base_task_prompt
+        + f"""
+
+You have access to the following tools:
+{tools_json}
+
+**INSTRUCTIONS:**
+1. If you need information from a tool to complete the task, call it using
+   the EXACT format below.  Call as many tools as needed, one at a time.
+2. After receiving all tool results, return your FINAL answer as a JSON
+   object with exactly two fields:
+   - "content" (string): your result
+   - "failed" (boolean): true if you could not complete the task
+
+**TOOL CALL FORMAT** — copy this exactly, replacing the values:
+<tool_call>
+{{"name": "tool_name", "arguments": {{"param1": "value1"}}}}
+</tool_call>
+
+IMPORTANT RULES:
+- You CANNOT view images, files, or external data directly.  Use a tool.
+- Do NOT hallucinate or make up results — call the tool instead.
+- Do NOT wrap the tool call in markdown code fences (no backticks).
+- When calling a tool, your ENTIRE response must be ONLY the <tool_call>
+  block shown above (starting with <tool_call> and ending with </tool_call>).
+- No extra text before or after the tool call block.
+"""
+    )
 
 
 class SingleAgentWorker(BaseSingleAgentWorker):
@@ -99,20 +177,30 @@ class SingleAgentWorker(BaseSingleAgentWorker):
             )
 
             if self.use_structured_output_handler and self.structured_handler:
-                # Use structured output handler for prompt-based extraction
-                enhanced_prompt = self.structured_handler.generate_structured_prompt(
-                    base_prompt=prompt,
-                    schema=TaskResult,
-                    examples=[
-                        {
-                            "content": "I have successfully completed the task...",
-                            "failed": False,
-                        }
-                    ],
-                    additional_instructions="Ensure you provide a clear "
-                    "description of what was done and whether the task "
-                    "succeeded or failed.",
-                )
+                # For models using simulated tool calling, use a tool-aware
+                # prompt that lets the model call tools BEFORE returning JSON.
+                # The normal structured-output prompt ends with "CRITICAL: ONLY
+                # JSON", which overrides the tool-call instructions and causes
+                # the model to hallucinate answers instead of calling tools.
+                if not getattr(worker_agent, "support_native_tool_calling", True):
+                    enhanced_prompt = _build_simulated_tool_call_prompt(
+                        base_task_prompt=prompt,
+                        worker_agent=worker_agent,
+                    )
+                else:
+                    enhanced_prompt = self.structured_handler.generate_structured_prompt(
+                        base_prompt=prompt,
+                        schema=TaskResult,
+                        examples=[
+                            {
+                                "content": "I have successfully completed the task...",
+                                "failed": False,
+                            }
+                        ],
+                        additional_instructions="Ensure you provide a clear "
+                        "description of what was done and whether the task "
+                        "succeeded or failed.",
+                    )
                 response = await worker_agent.astep(enhanced_prompt)
 
                 # Handle streaming response

@@ -1108,6 +1108,9 @@ async def construct_workforce(
     # Define agent creation functions
     # ========================================================================
 
+    # Check if we need to use simulated tool calling for models without native support
+    support_native_tool_calling = not options.use_simulated_tool_calling
+
     def _create_coordinator_and_task_agents() -> list[ListenChatAgent]:
         """Create coordinator and task agents (sync, runs in thread pool)."""
         return [
@@ -1129,6 +1132,7 @@ async def construct_workforce(
                         )
                     ).get_tools()
                 ],
+                support_native_tool_calling=support_native_tool_calling,
             )
             for key, prompt in {
                 Agents.coordinator_agent: f"""
@@ -1195,6 +1199,7 @@ the current date.
                     )
                 ).get_tools(),
             ],
+            support_native_tool_calling=support_native_tool_calling,
         )
 
     # ========================================================================
@@ -1278,6 +1283,7 @@ the current date.
         use_structured_output_handler=False
         if model_platform_enum == ModelPlatformType.OPENAI
         else True,
+        support_native_tool_calling=support_native_tool_calling,
     )
 
     # Worker descriptions for each agent type

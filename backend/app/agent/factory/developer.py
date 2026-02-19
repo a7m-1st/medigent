@@ -71,4 +71,5 @@ async def developer_agent(options: Chat):
             TerminalToolkit.toolkit_name(),
             NoteTakingToolkit.toolkit_name(),
         ],
+        support_native_tool_calling=not options.use_simulated_tool_calling,
     )

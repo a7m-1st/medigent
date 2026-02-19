@@ -64,6 +64,10 @@ class Chat(BaseModel):
     # User-specific search engine configurations
     # (e.g., GOOGLE_API_KEY, SEARCH_ENGINE_ID)
     search_config: dict[str, str] | None = None
+    # Check if we need to use simulated tool calling
+    # This is useful for models that don't support native function calling
+    # like MedGemma, local LLMs, or other open-source models
+    use_simulated_tool_calling: bool = False
 
     @model_validator(mode="before")
     @classmethod
