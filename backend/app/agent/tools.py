@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 
-from camel.toolkits import MCPToolkit
+from camel.toolkits import MCPToolkit, PubMedToolkit
 
 from app.agent.toolkit.audio_analysis_toolkit import AudioAnalysisToolkit
 from app.agent.toolkit.image_analysis_toolkit import ImageAnalysisToolkit

@@ -15,10 +15,12 @@ from pydash import chain
 
 from app.agent.agent_model import agent_model
 from app.agent.factory import (
-    browser_agent,
-    developer_agent,
-    document_agent,
-    multi_modal_agent,
+    attending_physician_agent,
+    chief_of_medicine_agent,
+    clinical_pharmacologist_agent,
+    clinical_researcher_agent,
+    medical_scribe_agent,
+    radiologist_agent,
     task_summary_agent,
 )
 from app.agent.listen_chat_agent import ListenChatAgent
@@ -1071,25 +1073,38 @@ async def construct_workforce(
     Sync functions are run in thread pool, async functions
     are awaited concurrently.
 
+    Supports both legacy agents and the 6 medical specialist agents.
+    The caller decides which agents to spin up via *required_agents*.
+
     Args:
         options: Chat configuration
         required_agents: List of agent names to create. If None or empty,
-            creates all agents (for COMPLEX tasks). Valid values:
+            creates all medical agents (default). Valid values:
+            Legacy:
             - 'browser_agent'
             - 'developer_agent'
             - 'document_agent'
             - 'multi_modal_agent'
+            Medical:
+            - 'chief_of_medicine'
+            - 'clinical_researcher'
+            - 'medical_scribe'
+            - 'radiologist'
+            - 'attending_physician'
+            - 'clinical_pharmacologist'
 
     Returns:
         Configured Workforce instance
     """
-    # Normalize required_agents - if empty or None, create all agents
+    # Default to the 6 medical agents when nothing is specified
     if not required_agents:
         required_agents = [
-            "browser_agent",
-            "developer_agent",
-            "document_agent",
-            "multi_modal_agent",
+            "chief_of_medicine",
+            "clinical_researcher",
+            "medical_scribe",
+            "radiologist",
+            "attending_physician",
+            "clinical_pharmacologist",
         ]
 
     logger.info(
@@ -1212,13 +1227,25 @@ the current date.
         asyncio.to_thread(_create_new_worker_agent),
     ]
 
-    # Dynamically add only required specialist agents
-    # Use lambdas to defer coroutine creation until they're actually needed
+    # Unified creation map — legacy + medical agents
+    # Lambdas wrap sync factories in to_thread; async factories are called directly
     agent_creation_map = {
-        "browser_agent": lambda: asyncio.to_thread(browser_agent, options),
-        "developer_agent": developer_agent,
-        "document_agent": document_agent,
-        "multi_modal_agent": lambda: asyncio.to_thread(multi_modal_agent, options),
+        "chief_of_medicine": chief_of_medicine_agent,
+        "clinical_researcher": clinical_researcher_agent,
+        "medical_scribe": medical_scribe_agent,
+        "radiologist": radiologist_agent,
+        "attending_physician": attending_physician_agent,
+        "clinical_pharmacologist": clinical_pharmacologist_agent,
+    }
+
+    # Async factory names — called with (options) to produce a coroutine
+    _async_factories = {
+        "chief_of_medicine",
+        "clinical_researcher",
+        "medical_scribe",
+        "radiologist",
+        "attending_physician",
+        "clinical_pharmacologist",
     }
 
     # Build list of tasks to execute
@@ -1226,11 +1253,9 @@ the current date.
     specialist_names = []
     for agent_name in required_agents:
         if agent_name in agent_creation_map:
-            # Call the lambda/function to get the actual coroutine/task
-            # Lambdas capture options, async functions need it passed in
             agent_creator = agent_creation_map[agent_name]
-            if callable(agent_creator) and agent_name in ("developer_agent", "document_agent"):
-                # Async function - needs options passed in
+            if agent_name in _async_factories:
+                # Async function — needs options passed in
                 specialist_tasks.append(agent_creator(options))
             else:
                 # Lambda with options already captured
@@ -1286,30 +1311,38 @@ the current date.
         support_native_tool_calling=support_native_tool_calling,
     )
 
-    # Worker descriptions for each agent type
+    # Worker descriptions for each agent type (legacy + medical)
     worker_descriptions = {
-        "developer_agent": (
-            "Developer Agent: A master-level coding assistant with a powerful "
-            "terminal. It can write and execute code, manage files, automate "
-            "desktop tasks, and deploy web applications to solve complex "
-            "technical challenges."
+        # Medical
+        "chief_of_medicine": (
+            "Chief of Medicine: Senior medical director who orchestrates the entire "
+            "diagnostic workflow. Decomposes complex cases, assigns tasks to specialists, "
+            "synthesizes findings, and ensures comprehensive patient care coordination."
         ),
-        "browser_agent": (
-            "Browser Agent: Can search the web, extract webpage content, "
-            "simulate browser actions, and provide relevant information to "
-            "solve the given task."
+        "clinical_researcher": (
+            "Clinical Researcher: Research physician who gathers evidence-based medical "
+            "information. Searches PubMed for peer-reviewed literature, finds clinical "
+            "guidelines, and provides citations to support diagnostic and treatment decisions."
         ),
-        "document_agent": (
-            "Document Agent: A document processing assistant skilled in creating "
-            "and modifying a wide range of file formats. It can generate "
-            "text-based files/reports (Markdown, JSON, YAML, HTML), "
-            "office documents (Word, PDF), presentations (PowerPoint), and "
-            "data files (Excel, CSV)."
+        "medical_scribe": (
+            "Medical Scribe: Professional documentation specialist who creates comprehensive "
+            "medical reports. Compiles findings from all specialists into structured documents "
+            "(SOAP, H&P formats) in PDF, HTML, and other professional formats."
         ),
-        "multi_modal_agent": (
-            "Multi-Modal Agent: A specialist in media processing. It can "
-            "analyze images and audio, transcribe speech, download videos, and "
-            "generate new images from text prompts."
+        "radiologist": (
+            "Radiologist: Board-certified specialist in medical imaging interpretation. "
+            "Analyzes X-rays, CT scans, MRI, dermatology images, and pathology slides to "
+            "detect abnormalities and guide diagnosis with confidence levels."
+        ),
+        "attending_physician": (
+            "Attending Physician: Experienced doctor who synthesizes all clinical data. "
+            "Forms differential diagnoses, creates treatment plans, and provides "
+            "evidence-based medical recommendations with clear reasoning."
+        ),
+        "clinical_pharmacologist": (
+            "Clinical Pharmacologist: Specialist in medications and therapeutic optimization. "
+            "Recommends appropriate drugs, checks interactions, adjusts dosing for patient "
+            "factors, and ensures safe pharmacotherapy."
         ),
     }
 

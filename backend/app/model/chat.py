@@ -33,11 +33,26 @@ class QuestionAnalysisResult(BaseModel):
 
 McpServers = dict[Literal["mcpServers"], dict[str, dict]]
 
-PLATFORM_MAPPING = {
-    "Z.ai": "openai-compatible-model",
-    "ModelArk": "openai-compatible-model",
-}
 
+class AgentConfig(BaseModel):
+    """Configuration for a specific agent type (e.g., Gemini 3 or MedGemma 4B).
+    
+    Used for primary_agent (Gemini 3 agents) and secondary_agent (MedGemma 4B agents).
+    Falls back to Chat global config if not provided.
+    """
+    api_url: str | None = None
+    model_type: str | None = None
+    model_platform: str | None = None
+    api_key: str | None = None
+    
+    def get_effective_config(self, fallback: "AgentConfig") -> "AgentConfig":
+        """Returns a new AgentConfig with fallbacks applied."""
+        return AgentConfig(
+            api_url=self.api_url or fallback.api_url,
+            model_type=self.model_type or fallback.model_type,
+            model_platform=self.model_platform or fallback.model_platform,
+            api_key=self.api_key or fallback.api_key,
+        )
 
 class Chat(BaseModel):
     task_id: str
@@ -68,6 +83,12 @@ class Chat(BaseModel):
     # This is useful for models that don't support native function calling
     # like MedGemma, local LLMs, or other open-source models
     use_simulated_tool_calling: bool = False
+    # Medical workforce model configurations
+    # primary_agent: For Gemini 3 agents (Chief of Medicine, Clinical Researcher, Medical Scribe)
+    # secondary_agent: For MedGemma 4B agents (Radiologist, Attending Physician, Clinical Pharmacologist)
+    # Falls back to Chat global config if not provided
+    primary_agent: AgentConfig | None = None
+    secondary_agent: AgentConfig | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -88,11 +109,6 @@ class Chat(BaseModel):
                 if env_url:
                     data["api_url"] = env_url
         return data
-
-    @field_validator("model_platform")
-    @classmethod
-    def map_model_platform(cls, v: str) -> str:
-        return PLATFORM_MAPPING.get(v, v)
 
     @field_validator("model_type")
     @classmethod

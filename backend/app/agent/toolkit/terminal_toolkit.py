@@ -44,7 +44,7 @@ def get_terminal_base_venv_path() -> str:
 
 @auto_listen_toolkit(BaseTerminalToolkit)
 class TerminalToolkit(BaseTerminalToolkit, AbstractToolkit):
-    agent_name: str = Agents.developer_agent
+    agent_name: str = Agents.medical_scribe
     _thread_pool: ThreadPoolExecutor | None = None
     _thread_local = threading.local()
 

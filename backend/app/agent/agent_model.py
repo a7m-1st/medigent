@@ -102,7 +102,7 @@ def agent_model(
 
     if agent_name == Agents.task_agent:
         model_config["stream"] = True
-    if agent_name == Agents.browser_agent:
+    if agent_name == Agents.clinical_researcher:
         try:
             model_platform_enum = ModelPlatformType(
                 effective_config["model_platform"].lower()

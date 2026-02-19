@@ -214,14 +214,18 @@ ActionData = (
 
 
 class Agents(str, Enum):
+    # Legacy agents (keep for compatibility)
     task_agent = "task_agent"
     coordinator_agent = "coordinator_agent"
     new_worker_agent = "new_worker_agent"
-    developer_agent = "developer_agent"
-    browser_agent = "browser_agent"
-    multi_modal_agent = "multi_modal_agent"
-    mcp_agent = "mcp_agent"
-    document_agent = "document_agent"
+    
+    # Medical workforce agents
+    chief_of_medicine = "chief_of_medicine"
+    clinical_researcher = "clinical_researcher"
+    medical_scribe = "medical_scribe"
+    radiologist = "radiologist"
+    attending_physician = "attending_physician"
+    clinical_pharmacologist = "clinical_pharmacologist"
 
 
 class TaskLock:
