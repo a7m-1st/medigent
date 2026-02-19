@@ -1,3 +1,4 @@
+
 import platform
 
 from camel.messages import BaseMessage
@@ -8,21 +9,21 @@ from camel.types import ModelPlatformType
 from app.agent.agent_model import agent_model
 from app.agent.listen_chat_agent import logger
 from app.agent.prompt import MULTI_MODAL_SYS_PROMPT
+from app.agent.toolkit.audio_analysis_toolkit import AudioAnalysisToolkit
+from app.agent.toolkit.human_toolkit import HumanToolkit
+from app.agent.toolkit.image_analysis_toolkit import ImageAnalysisToolkit
+
+# TODO: Remove NoteTakingToolkit and use TerminalToolkit instead
+from app.agent.toolkit.note_taking_toolkit import NoteTakingToolkit
+from app.agent.toolkit.search_toolkit import SearchToolkit
+from app.agent.toolkit.terminal_toolkit import TerminalToolkit
 from app.agent.utils import NOW_STR
-from app.model.chat import Chat, AgentModelConfig
+from app.model.chat import Chat
 from app.service.task import Agents
 from app.utils.file_utils import get_working_directory
 
 
 def multi_modal_agent(options: Chat):
-    # Use MedGemma for multi-modal analysis
-    medgemma_config = AgentModelConfig(
-        model_platform="openai-compatible-model",
-        model_type="medgemma-4b-it-Q6_K.gguf",
-        api_url="https://med.awelkaircodes.org/v1",
-        api_key="anything",
-    )
-
     working_directory = get_working_directory(options)
     logger.info(
         f"Creating multi-modal agent for project: {options.project_id} "
@@ -105,6 +106,12 @@ def multi_modal_agent(options: Chat):
         ),
         options,
         tools,
-        tool_names=tool_names,
-        custom_model_config=medgemma_config,
+        tool_names=[
+            AudioAnalysisToolkit.toolkit_name(),
+            ImageAnalysisToolkit.toolkit_name(),
+            HumanToolkit.toolkit_name(),
+            TerminalToolkit.toolkit_name(),
+            NoteTakingToolkit.toolkit_name(),
+            SearchToolkit.toolkit_name(),
+        ],
     )
