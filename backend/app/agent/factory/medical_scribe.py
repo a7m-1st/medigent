@@ -46,7 +46,7 @@ async def medical_scribe_agent(options: Chat):
     # Toolkits
     file_write_toolkit = FileToolkit(
         options.project_id,
-        agent_name=Agents.medical_scribe,
+        working_directory=working_directory,
     )
     file_write_toolkit = message_integration.register_toolkits(file_write_toolkit)
     

@@ -55,6 +55,15 @@ class AgentConfig(BaseModel):
             api_key=self.api_key or fallback.api_key,
             use_simulated_tool_calling=self.use_simulated_tool_calling or fallback.use_simulated_tool_calling,
         )
+    
+    def has_custom_config(self) -> bool:
+        """Check if any custom configuration values are set."""
+        return any([
+            self.api_url,
+            self.model_type,
+            self.model_platform,
+            self.api_key,
+        ])
 
 class Chat(BaseModel):
     task_id: str

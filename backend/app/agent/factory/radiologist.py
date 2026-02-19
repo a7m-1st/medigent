@@ -70,6 +70,7 @@ async def radiologist_agent(options: Chat):
     video_analysis_toolkit = VideoAnalysisToolkit(
         options.project_id,
         working_directory=working_directory,
+        model=toolkit_model,
     )
     video_analysis_toolkit = message_integration.register_toolkits(video_analysis_toolkit)
     
