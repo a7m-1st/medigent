@@ -43,6 +43,7 @@ export function MessageInput() {
       bun_mirror: '',
       uvx_mirror: '',
       summary_prompt: '',
+      use_simulated_tool_calling: false,
     });
   };
 

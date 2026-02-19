@@ -2,7 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import type { ChatMessage } from '@/types';
-import { Bot, User, Info, FileText, CheckCircle2, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { Bot, User, Info, FileText, CheckCircle2, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MessageBubbleProps {
