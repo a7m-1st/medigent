@@ -71,7 +71,7 @@ async def radiologist_agent(options: Chat):
     #     working_directory=working_directory,
     #     model=toolkit_model,
     # )
-    video_analysis_toolkit = message_integration.register_toolkits(video_analysis_toolkit)
+    # video_analysis_toolkit = message_integration.register_toolkits(video_analysis_toolkit)
     
     note_toolkit = NoteTakingToolkit(
         api_task_id=options.project_id,
@@ -82,7 +82,7 @@ async def radiologist_agent(options: Chat):
     
     tools = [
         *image_analysis_toolkit.get_tools(),
-        *video_analysis_toolkit.get_tools(),
+        # *video_analysis_toolkit.get_tools(),
         *HumanToolkit.get_can_use_tools(
             options.project_id, Agents.radiologist
         ),
