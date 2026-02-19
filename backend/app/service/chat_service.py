@@ -1208,11 +1208,12 @@ the current date.
     ]
 
     # Dynamically add only required specialist agents
+    # Use lambdas to defer coroutine creation until they're actually needed
     agent_creation_map = {
-        "browser_agent": asyncio.to_thread(browser_agent, options),
-        "developer_agent": developer_agent(options),
-        "document_agent": document_agent(options),
-        "multi_modal_agent": asyncio.to_thread(multi_modal_agent, options),
+        "browser_agent": lambda: asyncio.to_thread(browser_agent, options),
+        "developer_agent": developer_agent,
+        "document_agent": document_agent,
+        "multi_modal_agent": lambda: asyncio.to_thread(multi_modal_agent, options),
     }
 
     # Build list of tasks to execute
@@ -1220,7 +1221,15 @@ the current date.
     specialist_names = []
     for agent_name in required_agents:
         if agent_name in agent_creation_map:
-            specialist_tasks.append(agent_creation_map[agent_name])
+            # Call the lambda/function to get the actual coroutine/task
+            # Lambdas capture options, async functions need it passed in
+            agent_creator = agent_creation_map[agent_name]
+            if callable(agent_creator) and agent_name in ("developer_agent", "document_agent"):
+                # Async function - needs options passed in
+                specialist_tasks.append(agent_creator(options))
+            else:
+                # Lambda with options already captured
+                specialist_tasks.append(agent_creator())
             specialist_names.append(agent_name)
 
     logger.info(f"[WORKFORCE] Creating {len(specialist_names)} specialist agents: {specialist_names}")
