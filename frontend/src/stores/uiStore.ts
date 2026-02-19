@@ -65,6 +65,8 @@ const resolveTheme = (theme: Theme): 'light' | 'dark' => {
 }
 
 // Module-level state to track listener registration
+// This prevents duplicate listeners on HMR (Hot Module Replacement) during development
+// and provides a way to clean up the listener when needed
 let isListenerRegistered = false
 let mediaQueryHandler: (() => void) | null = null
 
