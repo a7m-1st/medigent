@@ -5,7 +5,7 @@ import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { useChatStore } from '@/stores/chatStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Paperclip, PauseCircle, Send, X, Upload } from 'lucide-react';
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 
 export const TaskInputPanel: React.FC = () => {
   const [message, setMessage] = useState('');
@@ -14,14 +14,27 @@ export const TaskInputPanel: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLInputElement>(null);
 
   const { sendMessage, stopChat, isLoading, isStreaming } = useChat();
   const { geminiApiKey, backendHasApiKey } = useApiConfigStore();
   const wasStopped = useChatStore((state) => state.wasStopped);
+  const draftMessage = useChatStore((state) => state.draftMessage);
+  const setDraftMessage = useChatStore((state) => state.setDraftMessage);
 
   const isProcessing = (isStreaming || isLoading) && !wasStopped;
   const hasContent = message.trim() || images.length > 0;
   const canSend = hasContent && !isProcessing;
+
+  // Sync draft message from store to local state
+  useEffect(() => {
+    if (draftMessage) {
+      setMessage(draftMessage);
+      setDraftMessage(''); // Clear the draft in the store
+      // Focus the textarea
+      textareaRef.current?.focus();
+    }
+  }, [draftMessage, setDraftMessage]);
 
   // Process files (from input or drag & drop)
   const processFiles = useCallback((files: FileList | File[]) => {
@@ -251,6 +264,7 @@ export const TaskInputPanel: React.FC = () => {
           )}
         >
           <input
+            ref={textareaRef}
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}

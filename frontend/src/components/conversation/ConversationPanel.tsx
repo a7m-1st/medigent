@@ -57,12 +57,18 @@ export const ConversationPanel: React.FC = () => {
 };
 
 const EmptyState: React.FC = () => {
+  const setDraftMessage = useChatStore((s) => s.setDraftMessage);
+  
   const suggestions = [
     { icon: Stethoscope, text: 'Analyze medical imaging' },
     { icon: FileSearch, text: 'Search clinical literature' },
     { icon: Brain, text: 'Draft clinical reports' },
     { icon: Globe, text: 'Find treatment guidelines' },
   ];
+
+  const handleSuggestionClick = (text: string) => {
+    setDraftMessage(text);
+  };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center select-none">
@@ -90,17 +96,20 @@ const EmptyState: React.FC = () => {
       {/* Suggestion chips */}
       <div className="mt-8 flex flex-wrap justify-center gap-2 max-w-lg">
         {suggestions.map((suggestion) => (
-          <div
+          <button
             key={suggestion.text}
+            onClick={() => handleSuggestionClick(suggestion.text)}
             className={cn(
               "flex items-center gap-2 px-4 py-2.5 rounded-xl",
               "bg-card border border-card-border",
-              "text-sm text-foreground-secondary"
+              "text-sm text-foreground-secondary",
+              "hover:border-accent hover:text-accent hover:bg-accent-light/50",
+              "transition-all duration-200 cursor-pointer"
             )}
           >
             <suggestion.icon className="w-4 h-4" />
             {suggestion.text}
-          </div>
+          </button>
         ))}
       </div>
     </div>

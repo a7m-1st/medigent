@@ -16,6 +16,7 @@ interface ChatState {
   streamingContent: string
   isSSEConnected: boolean
   wasStopped: boolean
+  draftMessage: string
 
   // Actions
   addMessage: (message: ChatMessage) => void
@@ -31,6 +32,7 @@ interface ChatState {
   setSSEConnected: (isConnected: boolean) => void
   setWasStopped: (wasStopped: boolean) => void
   clearMessages: () => void
+  setDraftMessage: (message: string) => void
   reset: () => void
 }
 
@@ -45,6 +47,7 @@ const initialState = {
   streamingContent: '',
   isSSEConnected: false,
   wasStopped: false,
+  draftMessage: '',
 }
 
 export const useChatStore = create<ChatState>()(
@@ -122,6 +125,11 @@ export const useChatStore = create<ChatState>()(
     clearMessages: () =>
       set((state) => {
         state.messages = []
+      }),
+
+    setDraftMessage: (message) =>
+      set((state) => {
+        state.draftMessage = message
       }),
 
     reset: () =>
