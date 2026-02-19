@@ -14,7 +14,7 @@ export const TaskInputPanel: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const { sendMessage, stopChat, isLoading, isStreaming } = useChat();
   const { geminiApiKey, backendHasApiKey } = useApiConfigStore();
@@ -31,8 +31,8 @@ export const TaskInputPanel: React.FC = () => {
     if (draftMessage) {
       setMessage(draftMessage);
       setDraftMessage(''); // Clear the draft in the store
-      // Focus the textarea
-      textareaRef.current?.focus();
+      // Focus the input
+      inputRef.current?.focus();
     }
   }, [draftMessage, setDraftMessage]);
 
@@ -264,7 +264,7 @@ export const TaskInputPanel: React.FC = () => {
           )}
         >
           <input
-            ref={textareaRef}
+            ref={inputRef}
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
