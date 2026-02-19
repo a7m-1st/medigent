@@ -112,7 +112,18 @@ export function useChat(): UseChatReturn {
         cleanupSSE();
         store.setLoading(true);
         store.setError(null);
+
+        // Preserve the user message that was optimistically added by the caller
+        // before clearing old conversation state for the new session.
+        // Must use getState() to read the latest store snapshot — the `store`
+        // variable captured by useCallback holds stale values from the last render.
+        const freshMessages = useChatStore.getState().messages;
+        const lastUserMessage = [...freshMessages].reverse().find(m => m.role === 'user');
         store.clearMessages();
+        if (lastUserMessage) {
+          store.addMessage(lastUserMessage);
+        }
+
         store.setCurrentProject(data.project_id);
         if (data.task_id) {
           store.setCurrentTask(data.task_id);

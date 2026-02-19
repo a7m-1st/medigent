@@ -30,15 +30,14 @@ export const ModernChatWindow: React.FC = () => {
 
   // Sync local messages with store messages
   useEffect(() => {
-    if (storeMessages.length > 0) {
-      const converted = storeMessages.map(m => ({
-        id: m.id,
-        role: m.role as 'user' | 'assistant' | 'system',
-        content: m.content,
-        timestamp: new Date(m.timestamp),
-      }));
-      setLocalMessages(converted);
-    }
+    const converted = storeMessages.map(m => ({
+      id: m.id,
+      role: m.role as 'user' | 'assistant' | 'system',
+      content: m.content,
+      timestamp: new Date(m.timestamp),
+      images: m.images,
+    }));
+    setLocalMessages(converted);
   }, [storeMessages]);
 
   useEffect(() => {
