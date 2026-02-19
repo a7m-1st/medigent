@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { useChatStore } from '@/stores/chatStore';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Paperclip, PauseCircle, Send, Upload, X } from 'lucide-react';
+import { FileText, Paperclip, PauseCircle, Send, Upload, X } from 'lucide-react';
 import React, { useCallback, useRef, useState } from 'react';
 
 // Default model configuration from environment variables
@@ -12,9 +12,15 @@ const DEFAULT_MODEL_PLATFORM = import.meta.env.VITE_DEFAULT_MODEL_PLATFORM || 'G
 const DEFAULT_MODEL_TYPE = import.meta.env.VITE_DEFAULT_MODEL_TYPE || 'GEMINI_3_FLASH';
 const DEFAULT_MODEL_API_URL = import.meta.env.VITE_DEFAULT_MODEL_API_URL || null;
 
+interface AttachedFile {
+  data: string;  // base64 data URL
+  name: string;  // original filename
+  type: 'image' | 'pdf';
+}
+
 export const TaskInputPanel: React.FC = () => {
   const [message, setMessage] = useState('');
-  const [images, setImages] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<AttachedFile[]>([]);
   const [isFocused, setIsFocused] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -25,20 +31,28 @@ export const TaskInputPanel: React.FC = () => {
   const wasStopped = useChatStore((state) => state.wasStopped);
 
   const isProcessing = (isStreaming || isLoading) && !wasStopped;
-  const hasContent = message.trim() || images.length > 0;
+  const hasContent = message.trim() || attachments.length > 0;
   const canSend = hasContent && !isProcessing;
 
   // Process files (from input or drag & drop)
   const processFiles = useCallback((files: FileList | File[]) => {
     Array.from(files).forEach(file => {
-      // Only accept image files
-      if (!file.type.startsWith('image/')) {
-        console.warn('Skipping non-image file:', file.name);
+      // Accept image files and PDF files
+      const isImage = file.type.startsWith('image/');
+      const isPdf = file.type === 'application/pdf';
+      
+      if (!isImage && !isPdf) {
+        console.warn('Skipping unsupported file type:', file.name, file.type);
         return;
       }
+      
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImages(prev => [...prev, reader.result as string]);
+        setAttachments(prev => [...prev, {
+          data: reader.result as string,
+          name: file.name,
+          type: isImage ? 'image' : 'pdf'
+        }]);
       };
       reader.readAsDataURL(file);
     });
@@ -53,8 +67,8 @@ export const TaskInputPanel: React.FC = () => {
     e.target.value = '';
   };
 
-  const removeImage = (index: number) => {
-    setImages(prev => prev.filter((_, i) => i !== index));
+  const removeAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
   // Drag & Drop handlers
@@ -94,7 +108,7 @@ export const TaskInputPanel: React.FC = () => {
 
   const handleSend = async () => {
     console.log('Send clicked! Message:', message, 'Processing:', isProcessing, 'API Key exists:', !!geminiApiKey);
-    if ((message.trim() || images.length > 0) && !isProcessing) {
+    if ((message.trim() || attachments.length > 0) && !isProcessing) {
       // Check if API key is configured (frontend or backend)
       if (!geminiApiKey && !backendHasApiKey) {
         console.error('No API key configured!');
@@ -104,19 +118,19 @@ export const TaskInputPanel: React.FC = () => {
 
       // Capture current values before clearing
       const currentMessage = message;
-      const currentImages = [...images];
+      const currentAttachments = [...attachments];
 
       // Clear input immediately for better UX
       setMessage('');
-      setImages([]);
+      setAttachments([]);
 
-      // Add user message to chat immediately (with images)
+      // Add user message to chat immediately (with attachments)
       useChatStore.getState().addMessage({
         id: `user-${Date.now()}`,
         role: 'user',
         content: currentMessage,
         timestamp: new Date().toISOString(),
-        images: currentImages.length > 0 ? currentImages : undefined,
+        images: currentAttachments.length > 0 ? currentAttachments.map(a => a.data) : undefined,
       });
 
       try {
@@ -124,7 +138,7 @@ export const TaskInputPanel: React.FC = () => {
 
         // Use sendMessage which automatically detects whether to use improve or start new chat
         // If no frontend key, send empty string — backend will use its .env default
-        await sendMessage(message, images, {
+        await sendMessage(message, attachments.map(a => a.data), {
           model_platform: DEFAULT_MODEL_PLATFORM,
           model_type: DEFAULT_MODEL_TYPE,
           api_key: geminiApiKey || "",
@@ -147,7 +161,7 @@ export const TaskInputPanel: React.FC = () => {
         console.error('Failed to send:', error);
         // Restore input on error so user can retry
         setMessage(currentMessage);
-        setImages(currentImages);
+        setAttachments(currentAttachments);
         if (error instanceof Error) {
           alert('Error: ' + error.message);
         }
@@ -194,31 +208,43 @@ export const TaskInputPanel: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Attached Images */}
+      {/* Attached Files */}
       <AnimatePresence>
-        {images.length > 0 && (
+        {attachments.length > 0 && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className="flex flex-wrap gap-2 px-4 pt-3"
           >
-            {images.map((img, i) => (
+            {attachments.map((file, i) => (
               <motion.div
                 key={i}
                 initial={{ scale: 0.8, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.8, opacity: 0 }}
-                className="relative group w-16 h-16 rounded-lg overflow-hidden border border-border bg-background-secondary"
+                className="relative group w-20 h-16 rounded-lg overflow-hidden border border-border bg-background-secondary flex flex-col items-center justify-center"
               >
-                <img src={img} alt="upload" className="w-full h-full object-cover" />
+                {file.type === 'image' ? (
+                  <img src={file.data} alt={file.name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="flex flex-col items-center justify-center p-1 w-full h-full bg-red-50">
+                    <FileText className="w-6 h-6 text-red-500" />
+                    <span className="text-[8px] text-red-600 truncate w-full text-center px-1">
+                      PDF
+                    </span>
+                  </div>
+                )}
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
                 <button
-                  onClick={() => removeImage(i)}
+                  onClick={() => removeAttachment(i)}
                   className="absolute top-1 right-1 p-1 bg-background/90 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
                 >
                   <X className="w-3 h-3 text-foreground" />
                 </button>
+                <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[8px] truncate px-1 text-center">
+                  {file.name}
+                </span>
               </motion.div>
             ))}
           </motion.div>
@@ -229,7 +255,7 @@ export const TaskInputPanel: React.FC = () => {
       <div className="flex-1 flex items-center gap-3 p-4">
         <input
           type="file"
-          accept="image/*"
+          accept="image/*,.pdf"
           multiple
           className="hidden"
           ref={fileInputRef}

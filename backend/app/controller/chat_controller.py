@@ -41,6 +41,7 @@ chat_logger = logging.getLogger("chat_controller")
 # SSE timeout configuration (60 minutes in seconds)
 SSE_TIMEOUT_SECONDS = 60 * 60
 
+
 class ProjectFile(BaseModel):
     name: str
     path: str
@@ -54,6 +55,7 @@ class ProjectFilesResponse(BaseModel):
     task_id: str | None
     files: list[ProjectFile]
     total_count: int
+
 
 async def _cleanup_task_lock_safe(task_lock, reason: str) -> bool:
     """Safely cleanup task lock with existence check.
@@ -448,3 +450,137 @@ def list_project_files(project_id: str, task_id: str | None = None):
         files=files,
         total_count=len(files),
     )
+
+
+@router.get(
+    "/projects/{project_id}/files/{file_path:path}", name="get project file"
+)
+def get_project_file(project_id: str, file_path: str):
+    """Get/download a specific file from a project folder.
+
+    Args:
+        project_id: The project ID
+        file_path: Relative path to the file (URL encoded)
+
+    Returns:
+        The file content with appropriate content-type
+    """
+    base_path = Path.home() / "medgemma" / f"project_{project_id}"
+    full_path = base_path / file_path
+
+    # Security check - ensure path is within project folder
+    try:
+        full_path = full_path.resolve()
+        base_path = base_path.resolve()
+        if not str(full_path).startswith(str(base_path)):
+            chat_logger.warning(
+                "Path traversal attempt detected",
+                extra={"project_id": project_id, "file_path": file_path},
+            )
+            return Response(status_code=403, content="Access denied")
+    except Exception:
+        return Response(status_code=400, content="Invalid path")
+
+    if not full_path.exists():
+        chat_logger.warning(
+            "File not found",
+            extra={
+                "project_id": project_id,
+                "file_path": file_path,
+                "path": str(full_path),
+            },
+        )
+        return Response(status_code=404, content="File not found")
+
+    if not full_path.is_file():
+        return Response(status_code=400, content="Not a file")
+
+    # Determine content type
+    content_type = "application/octet-stream"
+    suffix = full_path.suffix.lower()
+    mime_types = {
+        ".html": "text/html",
+        ".htm": "text/html",
+        ".txt": "text/plain",
+        ".json": "application/json",
+        ".pdf": "application/pdf",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".svg": "image/svg+xml",
+        ".md": "text/markdown",
+        ".py": "text/x-python",
+        ".js": "text/javascript",
+        ".css": "text/css",
+    }
+    content_type = mime_types.get(suffix, "application/octet-stream")
+
+    chat_logger.info(
+        "Serving project file",
+        extra={"project_id": project_id, "file_path": file_path},
+    )
+
+    return Response(
+        content=full_path.read_bytes(),
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{full_path.name}"'
+        },
+    )
+
+
+@router.delete(
+    "/projects/{project_id}/files/{file_path:path}", name="delete project file"
+)
+def delete_project_file(project_id: str, file_path: str):
+    """Delete a specific file from a project folder.
+
+    Args:
+        project_id: The project ID
+        file_path: Relative path to the file (URL encoded)
+
+    Returns:
+        Success message
+    """
+    base_path = Path.home() / "medgemma" / f"project_{project_id}"
+    full_path = base_path / file_path
+
+    # Security check - ensure path is within project folder
+    try:
+        full_path = full_path.resolve()
+        base_path = base_path.resolve()
+        if not str(full_path).startswith(str(base_path)):
+            chat_logger.warning(
+                "Path traversal attempt detected",
+                extra={"project_id": project_id, "file_path": file_path},
+            )
+            return Response(status_code=403, content="Access denied")
+    except Exception:
+        return Response(status_code=400, content="Invalid path")
+
+    if not full_path.exists():
+        chat_logger.warning(
+            "File not found for deletion",
+            extra={"project_id": project_id, "file_path": file_path},
+        )
+        return Response(status_code=404, content="File not found")
+
+    if not full_path.is_file():
+        return Response(status_code=400, content="Not a file")
+
+    try:
+        full_path.unlink()
+        chat_logger.info(
+            "Deleted project file",
+            extra={"project_id": project_id, "file_path": file_path},
+        )
+        return {"message": "File deleted successfully", "file_path": file_path}
+    except Exception as e:
+        chat_logger.error(
+            f"Failed to delete file: {e}",
+            extra={"project_id": project_id, "file_path": file_path},
+        )
+        return Response(
+            status_code=500, content=f"Failed to delete file: {str(e)}"
+        )
