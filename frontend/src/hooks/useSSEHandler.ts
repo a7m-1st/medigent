@@ -40,7 +40,7 @@ function isMainAgent(name: string): boolean {
  * 
  * KEY DESIGN DECISION: The backend uses different agent_ids across different events
  * for the same agent. For example, create_agent might assign id "431ef789..." but
- * activate_agent uses id "b9acbcd8..." for the same document_agent. The agent_name
+ * activate_agent uses id "b9acbcd8..." for the same clinical_researcher. The agent_name
  * is the ONLY consistent identifier, so all lookups go through agent_name.
  */
 export function useSSEHandler() {
@@ -295,11 +295,11 @@ export function useSSEHandler() {
         data.data
       );
     } else {
-      // Fallback: add to developer_agent since terminal is typically from that agent
+      // Fallback: add to medical_scribe since terminal output is typically from that agent
       resourceStore.addTerminalOutput(
-        'developer_agent',
+        'medical_scribe',
         data.process_task_id,
-        'Developer Agent',
+        'Medical Scribe',
         data.data
       );
     }

@@ -7,10 +7,12 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
-  Globe,
+  Crown,
+  BookOpen,
   FileText,
-  Code,
-  Image as ImageIcon,
+  Scan,
+  Stethoscope,
+  Pill,
   Loader2,
   AlertCircle,
   Wrench,
@@ -21,10 +23,12 @@ import React, { useState } from 'react';
 
 // Agent icon mapping
 const AGENT_ICONS: Record<string, typeof Bot> = {
-  browser_agent: Globe,
-  developer_agent: Code,
-  document_agent: FileText,
-  multi_modal_agent: ImageIcon,
+  attending_physician: Stethoscope,
+  chief_of_medicine: Crown,
+  clinical_pharmacologist: Pill,
+  clinical_researcher: BookOpen,
+  medical_scribe: FileText,
+  radiologist: Scan,
 };
 
 // Format token count for display (e.g., 340K, 1.2M)
@@ -40,25 +44,35 @@ function formatTokenCount(tokens: number): string {
 
 // Agent color mapping
 const AGENT_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  browser_agent: {
-    bg: 'bg-green-100 dark:bg-green-900/30',
-    text: 'text-green-600 dark:text-green-400',
-    border: 'border-green-200 dark:border-green-800',
-  },
-  developer_agent: {
-    bg: 'bg-purple-100 dark:bg-purple-900/30',
-    text: 'text-purple-600 dark:text-purple-400',
-    border: 'border-purple-200 dark:border-purple-800',
-  },
-  document_agent: {
+  attending_physician: {
     bg: 'bg-orange-100 dark:bg-orange-900/30',
     text: 'text-orange-600 dark:text-orange-400',
     border: 'border-orange-200 dark:border-orange-800',
   },
-  multi_modal_agent: {
+  chief_of_medicine: {
     bg: 'bg-blue-100 dark:bg-blue-900/30',
     text: 'text-blue-600 dark:text-blue-400',
     border: 'border-blue-200 dark:border-blue-800',
+  },
+  clinical_pharmacologist: {
+    bg: 'bg-teal-100 dark:bg-teal-900/30',
+    text: 'text-teal-600 dark:text-teal-400',
+    border: 'border-teal-200 dark:border-teal-800',
+  },
+  clinical_researcher: {
+    bg: 'bg-green-100 dark:bg-green-900/30',
+    text: 'text-green-600 dark:text-green-400',
+    border: 'border-green-200 dark:border-green-800',
+  },
+  medical_scribe: {
+    bg: 'bg-purple-100 dark:bg-purple-900/30',
+    text: 'text-purple-600 dark:text-purple-400',
+    border: 'border-purple-200 dark:border-purple-800',
+  },
+  radiologist: {
+    bg: 'bg-red-100 dark:bg-red-900/30',
+    text: 'text-red-600 dark:text-red-400',
+    border: 'border-red-200 dark:border-red-800',
   },
 };
 
@@ -103,7 +117,7 @@ interface AgentCardProps {
 const AgentCard: React.FC<AgentCardProps> = ({ agent }) => {
   const [isExpanded, setIsExpanded] = useState(agent.state === 'working');
   const Icon = AGENT_ICONS[agent.name] || Bot;
-  const colors = AGENT_COLORS[agent.name] || AGENT_COLORS.browser_agent;
+  const colors = AGENT_COLORS[agent.name] || AGENT_COLORS.chief_of_medicine;
 
   // Parse the task content from lastInput to get just the task description
   const extractTaskDescription = (input: string | undefined): string => {

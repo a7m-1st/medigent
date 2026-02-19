@@ -5,39 +5,48 @@ import { useResourceStore } from '@/stores/resourceStore';
 import { useChatStore } from '@/stores/chatStore';
 import { TerminalOutput } from '@/components/resources/TerminalOutput';
 import { 
-  Globe, 
   Terminal, 
   FileText, 
-  Zap,
   Activity,
   AlertCircle,
   CheckCircle,
   Wrench,
   Clock,
   ChevronUp,
+  Crown,
+  BookOpen,
+  Scan,
+  Stethoscope,
+  Pill,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// Define the 4 main agents that should always be visible
-const MAIN_AGENTS_CONFIG = [
-  { name: 'browser_agent', displayName: 'Browser Agent', icon: Globe, color: 'blue' },
-  { name: 'developer_agent', displayName: 'Developer Agent', icon: Terminal, color: 'emerald' },
-  { name: 'document_agent', displayName: 'Document Agent', icon: FileText, color: 'amber' },
-  { name: 'multi_modal_agent', displayName: 'Multi-Modal Agent', icon: Zap, color: 'purple' },
+// Medical workforce agents configuration
+const MEDICAL_AGENTS_CONFIG = [
+  { name: 'chief_of_medicine', displayName: 'Chief of Medicine', icon: Crown, color: 'blue' },
+  { name: 'clinical_researcher', displayName: 'Clinical Researcher', icon: BookOpen, color: 'green' },
+  { name: 'medical_scribe', displayName: 'Medical Scribe', icon: FileText, color: 'purple' },
+  { name: 'radiologist', displayName: 'Radiologist', icon: Scan, color: 'red' },
+  { name: 'attending_physician', displayName: 'Attending Physician', icon: Stethoscope, color: 'orange' },
+  { name: 'clinical_pharmacologist', displayName: 'Clinical Pharmacologist', icon: Pill, color: 'teal' },
 ] as const;
+
+
 
 export const AgentDashboard: React.FC = () => {
   const agents = useAgentStatusStore((s) => s.agents);
   const isStreaming = useChatStore((s) => s.isStreaming);
 
   // Count active agents
-  const activeCount = Object.values(agents).filter(a => a.state === 'working').length;
+  const activeCount = Object.values(agents).filter((a: any) => a.state === 'working').length;
   const totalRegistered = Object.keys(agents).length;
 
   return (
     <div className="h-full flex flex-col p-4 gap-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-widest">Active Agents</h2>
+        <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-widest">
+          Medical Team
+        </h2>
         <div className="flex items-center gap-3">
           {totalRegistered > 0 && (
             <span className="text-[10px] text-zinc-500 font-mono">
@@ -57,7 +66,7 @@ export const AgentDashboard: React.FC = () => {
         </div>
       </div>
       <div className="grid grid-cols-2 gap-4 flex-1">
-        {MAIN_AGENTS_CONFIG.map((config) => {
+        {MEDICAL_AGENTS_CONFIG.map((config) => {
           const agent = agents[config.name];
           return (
             <AgentCard 
@@ -72,8 +81,16 @@ export const AgentDashboard: React.FC = () => {
   );
 };
 
+// Combined agent config type
+interface AgentConfigItem {
+  name: string;
+  displayName: string;
+  icon: any;
+  color: string;
+}
+
 interface AgentCardProps {
-  config: typeof MAIN_AGENTS_CONFIG[number];
+  config: AgentConfigItem;
   agent: AgentStatus | undefined;
 }
 
@@ -345,6 +362,35 @@ function getColorClasses(color: string, state: string, isActive: boolean) {
       bg: !isActive ? 'bg-zinc-900/30 border-zinc-800/30' : state === 'working' ? 'bg-purple-400/5 border-purple-400/10' : state === 'completed' ? 'bg-emerald-400/5 border-emerald-400/10' : state === 'error' ? 'bg-rose-400/5 border-rose-400/10' : 'bg-zinc-800/30 border-zinc-700/30',
       ring: 'ring-1 ring-purple-400/20',
       bar: 'bg-purple-400',
+    },
+    // Medical agent colors
+    green: {
+      icon: state === 'working' ? 'text-green-400' : state === 'completed' ? 'text-emerald-400' : state === 'error' ? 'text-rose-400' : 'text-zinc-600',
+      dot: !isActive ? 'bg-zinc-700' : state === 'working' ? 'bg-green-400' : state === 'completed' ? 'bg-emerald-400' : state === 'error' ? 'bg-rose-400' : 'bg-zinc-600',
+      bg: !isActive ? 'bg-zinc-900/30 border-zinc-800/30' : state === 'working' ? 'bg-green-400/5 border-green-400/10' : state === 'completed' ? 'bg-emerald-400/5 border-emerald-400/10' : state === 'error' ? 'bg-rose-400/5 border-rose-400/10' : 'bg-zinc-800/30 border-zinc-700/30',
+      ring: 'ring-1 ring-green-400/20',
+      bar: 'bg-green-400',
+    },
+    red: {
+      icon: state === 'working' ? 'text-red-400' : state === 'completed' ? 'text-emerald-400' : state === 'error' ? 'text-rose-400' : 'text-zinc-600',
+      dot: !isActive ? 'bg-zinc-700' : state === 'working' ? 'bg-red-400' : state === 'completed' ? 'bg-emerald-400' : state === 'error' ? 'bg-rose-400' : 'bg-zinc-600',
+      bg: !isActive ? 'bg-zinc-900/30 border-zinc-800/30' : state === 'working' ? 'bg-red-400/5 border-red-400/10' : state === 'completed' ? 'bg-emerald-400/5 border-emerald-400/10' : state === 'error' ? 'bg-rose-400/5 border-rose-400/10' : 'bg-zinc-800/30 border-zinc-700/30',
+      ring: 'ring-1 ring-red-400/20',
+      bar: 'bg-red-400',
+    },
+    orange: {
+      icon: state === 'working' ? 'text-orange-400' : state === 'completed' ? 'text-emerald-400' : state === 'error' ? 'text-rose-400' : 'text-zinc-600',
+      dot: !isActive ? 'bg-zinc-700' : state === 'working' ? 'bg-orange-400' : state === 'completed' ? 'bg-emerald-400' : state === 'error' ? 'bg-rose-400' : 'bg-zinc-600',
+      bg: !isActive ? 'bg-zinc-900/30 border-zinc-800/30' : state === 'working' ? 'bg-orange-400/5 border-orange-400/10' : state === 'completed' ? 'bg-emerald-400/5 border-emerald-400/10' : state === 'error' ? 'bg-rose-400/5 border-rose-400/10' : 'bg-zinc-800/30 border-zinc-700/30',
+      ring: 'ring-1 ring-orange-400/20',
+      bar: 'bg-orange-400',
+    },
+    teal: {
+      icon: state === 'working' ? 'text-teal-400' : state === 'completed' ? 'text-emerald-400' : state === 'error' ? 'text-rose-400' : 'text-zinc-600',
+      dot: !isActive ? 'bg-zinc-700' : state === 'working' ? 'bg-teal-400' : state === 'completed' ? 'bg-emerald-400' : state === 'error' ? 'bg-rose-400' : 'bg-zinc-600',
+      bg: !isActive ? 'bg-zinc-900/30 border-zinc-800/30' : state === 'working' ? 'bg-teal-400/5 border-teal-400/10' : state === 'completed' ? 'bg-emerald-400/5 border-emerald-400/10' : state === 'error' ? 'bg-rose-400/5 border-rose-400/10' : 'bg-zinc-800/30 border-zinc-700/30',
+      ring: 'ring-1 ring-teal-400/20',
+      bar: 'bg-teal-400',
     },
   };
 
