@@ -4,8 +4,13 @@ import { cn } from '@/lib/utils';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { useChatStore } from '@/stores/chatStore';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Paperclip, PauseCircle, Send, X, Upload } from 'lucide-react';
-import React, { useRef, useState, useCallback } from 'react';
+import { Paperclip, PauseCircle, Send, Upload, X } from 'lucide-react';
+import React, { useCallback, useRef, useState } from 'react';
+
+// Default model configuration from environment variables
+const DEFAULT_MODEL_PLATFORM = import.meta.env.VITE_DEFAULT_MODEL_PLATFORM || 'GEMINI';
+const DEFAULT_MODEL_TYPE = import.meta.env.VITE_DEFAULT_MODEL_TYPE || 'GEMINI_3_FLASH';
+const DEFAULT_MODEL_API_URL = import.meta.env.VITE_DEFAULT_MODEL_API_URL || null;
 
 export const TaskInputPanel: React.FC = () => {
   const [message, setMessage] = useState('');
@@ -119,11 +124,11 @@ export const TaskInputPanel: React.FC = () => {
 
         // Use sendMessage which automatically detects whether to use improve or start new chat
         // If no frontend key, send empty string — backend will use its .env default
-        await sendMessage(currentMessage, currentImages, {
-          model_platform: "GEMINI",
-          model_type: "GEMINI_3_FLASH",
+        await sendMessage(message, images, {
+          model_platform: DEFAULT_MODEL_PLATFORM,
+          model_type: DEFAULT_MODEL_TYPE,
           api_key: geminiApiKey || "",
-          api_url: null,
+          api_url: DEFAULT_MODEL_API_URL,
           language: "en",
           browser_port: 9222,
           max_retries: 3,
