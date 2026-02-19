@@ -7,6 +7,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Paperclip, PauseCircle, Send, X } from 'lucide-react';
 import React, { useRef, useState } from 'react';
 
+// Default model configuration from environment variables
+const DEFAULT_MODEL_PLATFORM = import.meta.env.VITE_DEFAULT_MODEL_PLATFORM || 'GEMINI';
+const DEFAULT_MODEL_TYPE = import.meta.env.VITE_DEFAULT_MODEL_TYPE || 'GEMINI_3_FLASH';
+const DEFAULT_MODEL_API_URL = import.meta.env.VITE_DEFAULT_MODEL_API_URL || null;
+
 export const TaskInputPanel: React.FC = () => {
   const [message, setMessage] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -50,10 +55,10 @@ export const TaskInputPanel: React.FC = () => {
         
         // Use sendMessage which automatically detects whether to use improve or start new chat
         await sendMessage(message, images, {
-          model_platform: "GEMINI",
-          model_type: "GEMINI_3_FLASH",
+          model_platform: DEFAULT_MODEL_PLATFORM,
+          model_type: DEFAULT_MODEL_TYPE,
           api_key: geminiApiKey,
-          api_url: null,
+          api_url: DEFAULT_MODEL_API_URL,
           language: "en",
           browser_port: 9222,
           max_retries: 3,
