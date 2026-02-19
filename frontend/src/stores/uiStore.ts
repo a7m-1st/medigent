@@ -25,6 +25,7 @@ interface UIState {
   addToast: (toast: Omit<UIState['toasts'][0], 'id'>) => void
   removeToast: (id: string) => void
   initializeTheme: () => void
+  cleanupTheme: () => void
 }
 
 // Get system preference
@@ -62,6 +63,10 @@ const resolveTheme = (theme: Theme): 'light' | 'dark' => {
   }
   return theme
 }
+
+// Module-level state to track listener registration
+let isListenerRegistered = false
+let mediaQueryHandler: (() => void) | null = null
 
 const initialTheme = getInitialTheme()
 const initialResolvedTheme = resolveTheme(initialTheme)
@@ -120,6 +125,11 @@ export const useUIStore = create<UIState>()(
         }),
 
       initializeTheme: () => {
+        // Prevent duplicate listener registration
+        if (isListenerRegistered) {
+          return
+        }
+
         const { theme } = get()
         const resolved = resolveTheme(theme)
         set((state) => {
@@ -141,6 +151,19 @@ export const useUIStore = create<UIState>()(
             }
           }
           mediaQuery.addEventListener('change', handler)
+          // Store handler reference and mark as registered
+          mediaQueryHandler = handler
+          isListenerRegistered = true
+        }
+      },
+
+      cleanupTheme: () => {
+        // Remove listener if it was registered
+        if (typeof window !== 'undefined' && isListenerRegistered && mediaQueryHandler) {
+          const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+          mediaQuery.removeEventListener('change', mediaQueryHandler)
+          mediaQueryHandler = null
+          isListenerRegistered = false
         }
       },
     })),
