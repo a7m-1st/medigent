@@ -1,8 +1,8 @@
-
-
 import asyncio
+import base64
 import datetime
 import logging
+import os
 import platform
 from pathlib import Path
 from typing import Any
@@ -47,6 +47,133 @@ from app.utils.workforce import Workforce
 logger = logging.getLogger("chat_service")
 MAX_CONVERSATION_CONTEXT_LENGTH = 100000
 
+
+def is_base64_string(s: str) -> bool:
+    """Check if a string is base64 encoded.
+
+    Args:
+        s: String to check
+
+    Returns:
+        True if string appears to be base64 encoded
+    """
+    if not s:
+        return False
+    # Check for data URI scheme
+    if s.startswith("data:"):
+        return True
+    # Check for raw base64 (no spaces, length divisible by 4 when padded)
+    s = s.strip()
+    if len(s) < 4:
+        return False
+    # Simple heuristic: base64 strings contain only alphanumeric chars + + / =
+    base64_chars = set(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+    )
+    return all(c in base64_chars for c in s)
+
+
+def decode_base64_attachment(
+    base64_string: str, save_dir: str, project_id: str, task_id: str
+) -> str | None:
+    """Decode base64 string and save to file.
+
+    Args:
+        base64_string: Base64 encoded string (with or without data URI prefix)
+        save_dir: Directory to save the file
+        project_id: Project ID for naming
+        task_id: Task ID for naming
+
+    Returns:
+        Path to saved file, or None if failed
+    """
+    try:
+        # Handle data URI scheme: data:image/png;base64,XXXXX
+        if base64_string.startswith("data:"):
+            # Extract mime type and data
+            header, data = base64_string.split(",", 1)
+            # Extract extension from mime type (e.g., image/png -> png)
+            mime_parts = header.split(";")
+            mime_type = (
+                mime_parts[0] if mime_parts else "application/octet-stream"
+            )
+            ext = mime_type.split("/")[-1]
+            if ext == "jpeg":
+                ext = "jpg"
+        else:
+            # Raw base64 - assume binary data
+            data = base64_string
+            ext = "bin"
+
+        # Decode
+        file_data = base64.b64decode(data)
+
+        # Generate filename
+        filename = f"attachment_{project_id}_{task_id}.{ext}"
+        filepath = Path(save_dir) / filename
+
+        # Ensure directory exists
+        Path(save_dir).mkdir(parents=True, exist_ok=True)
+
+        # Save file
+        with open(filepath, "wb") as f:
+            f.write(file_data)
+
+        logger.info(
+            f"Decoded base64 attachment: {filename}",
+            extra={"project_id": project_id, "task_id": task_id},
+        )
+
+        return str(filepath)
+
+    except Exception as e:
+        logger.error(
+            f"Failed to decode base64 attachment: {e}",
+            extra={"project_id": project_id, "task_id": task_id},
+        )
+        return None
+
+
+def process_attachments(
+    attaches: list[str], save_dir: str, project_id: str, task_id: str
+) -> list[str]:
+    """Process attachments, decoding base64 strings to files.
+
+    Args:
+        attaches: List of attachment strings (URLs, paths, or base64)
+        save_dir: Directory to save decoded files
+        project_id: Project ID
+        task_id: Task ID
+
+    Returns:
+        List of file paths (original paths for URLs/paths,
+        decoded paths for base64)
+    """
+    processed = []
+
+    for attach in attaches:
+        if not attach:
+            continue
+
+        if is_base64_string(attach):
+            # Decode base64 and save
+            filepath = decode_base64_attachment(
+                attach, save_dir, project_id, task_id
+            )
+            if filepath:
+                processed.append(filepath)
+            else:
+                logger.warning(
+                    f"Failed to process base64 attachment, skipping",
+                    extra={"project_id": project_id, "task_id": task_id},
+                )
+        else:
+            # Keep original (URL or file path)
+            processed.append(attach)
+
+    return processed
+
+
 async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
     """Main task execution loop. Called when POST /chat endpoint
     is hit to start a new chat session.
@@ -81,11 +208,11 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
     loop_iteration = 0
     event_loop = asyncio.get_running_loop()
     sub_tasks: list[Task] = []
-    
+
     # Session timeout: 1 hour (3600 seconds)
     SESSION_TIMEOUT_SECONDS = 3600
     session_start_time = datetime.datetime.now()
-    
+
     while True:
         loop_iteration += 1
         logger.debug(
@@ -97,7 +224,9 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
         )
 
         # Check session timeout (1 hour)
-        elapsed = (datetime.datetime.now() - session_start_time).total_seconds()
+        elapsed = (
+            datetime.datetime.now() - session_start_time
+        ).total_seconds()
         if elapsed > SESSION_TIMEOUT_SECONDS:
             # Stop workforce if running
             if workforce is not None and workforce._running:
@@ -106,7 +235,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 )
                 workforce.stop()
                 workforce.stop_gracefully()
-            
+
             # Send timeout error to client
             yield sse_json(
                 "error",
@@ -116,7 +245,9 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 },
             )
             # Clean up task lock
-            logger.info("[LIFECYCLE] Deleting task lock due to session timeout")
+            logger.info(
+                "[LIFECYCLE] Deleting task lock due to session timeout"
+            )
             await delete_task_lock(task_lock.id)
             break
 
@@ -216,6 +347,14 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 if start_event_loop is True:
                     question = options.question
                     attaches_to_use = options.attaches
+                    # Process base64 attachments
+                    save_dir = options.file_save_path("attachments")
+                    attaches_to_use = process_attachments(
+                        attaches_to_use,
+                        save_dir,
+                        options.project_id,
+                        options.task_id,
+                    )
                     logger.info(
                         "[NEW-QUESTION] Initial question"
                         " from options.question: "
@@ -229,6 +368,14 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         item.data.attaches
                         if item.data.attaches
                         else options.attaches
+                    )
+                    # Process base64 attachments
+                    save_dir = options.file_save_path("attachments")
+                    attaches_to_use = process_attachments(
+                        attaches_to_use,
+                        save_dir,
+                        options.project_id,
+                        options.task_id,
                     )
                     logger.info(
                         "[NEW-QUESTION] Follow-up "
@@ -262,14 +409,11 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     continue
 
                 logger.info(
-                    "[NEW-QUESTION] Processing task "
-                    "via workforce flow"
+                    "[NEW-QUESTION] Processing task via workforce flow"
                 )
                 # Update the sync_step with new task_id
                 if hasattr(item, "new_task_id") and item.new_task_id:
-                    set_current_task_id(
-                        options.project_id, item.new_task_id
-                    )
+                    set_current_task_id(options.project_id, item.new_task_id)
                     task_lock.summary_generated = False
 
                 yield sse_json("confirmed", {"question": question})
@@ -376,8 +520,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                             sub_tasks = stream_state["subtasks"]
                         state_holder["sub_tasks"] = sub_tasks
                         logger.info(
-                            "Task decomposed into "
-                            f"{len(sub_tasks)} subtasks"
+                            f"Task decomposed into {len(sub_tasks)} subtasks"
                         )
                         try:
                             task_lock.decompose_sub_tasks = sub_tasks
@@ -431,9 +574,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         payload = {
                             "project_id": options.project_id,
                             "task_id": options.task_id,
-                            "sub_tasks": tree_sub_tasks(
-                                camel_task.subtasks
-                            ),
+                            "sub_tasks": tree_sub_tasks(camel_task.subtasks),
                             "delta_sub_tasks": tree_sub_tasks(sub_tasks),
                             "is_final": True,
                             "summary_task": summary_task_content,
@@ -496,18 +637,26 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         error_msg = str(e)
                         logger.error(
                             f"[WORKFORCE] Error during task execution: {error_msg}",
-                            extra={"project_id": options.project_id, "task_id": options.task_id},
+                            extra={
+                                "project_id": options.project_id,
+                                "task_id": options.task_id,
+                            },
                             exc_info=True,
                         )
                         # Put error action in queue so main loop can yield it
                         await task_lock.put_queue(
                             ActionErrorData(
                                 action=Action.error,
-                                data={"message": error_msg, "type": "workforce_error"},
+                                data={
+                                    "message": error_msg,
+                                    "type": "workforce_error",
+                                },
                             )
                         )
 
-                task = asyncio.create_task(workforce_start_with_error_handling())
+                task = asyncio.create_task(
+                    workforce_start_with_error_handling()
+                )
                 task_lock.add_background_task(task)
             elif item.action == Action.task_state:
                 # Track completed task results for the end event
@@ -562,7 +711,10 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 error_type = item.data.get("type", "workforce_error")
                 logger.error(
                     f"[SSE] Sending error event: {error_message}",
-                    extra={"project_id": options.project_id, "task_id": options.task_id},
+                    extra={
+                        "project_id": options.project_id,
+                        "task_id": options.task_id,
+                    },
                 )
                 yield sse_json(
                     "error",
@@ -726,15 +878,9 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 )
                 try:
                     await delete_task_lock(task_lock.id)
-                    logger.info(
-                        "[LIFECYCLE] Task lock deleted "
-                        "after task end"
-                    )
+                    logger.info("[LIFECYCLE] Task lock deleted after task end")
                 except Exception as e:
-                    logger.error(
-                        f"Error deleting task lock "
-                        f"on end: {e}"
-                    )
+                    logger.error(f"Error deleting task lock on end: {e}")
                 break
 
             elif item.action == Action.stop:
@@ -808,6 +954,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
             yield sse_json("error", {"message": str(e)})
             # Continue processing other items instead of breaking
 
+
 def to_sub_tasks(task: Task, summary_task_content: str):
     logger.info("[TO-SUB-TASKS] 📋 Creating to_sub_tasks SSE event")
     logger.info(
@@ -866,7 +1013,6 @@ def tree_sub_tasks(sub_tasks: list[Task], depth: int = 0):
     )
 
     return result
-
 
 
 async def summary_task(agent: ListenChatAgent, task: Task) -> str:
