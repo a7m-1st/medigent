@@ -31,6 +31,8 @@ export function useSnapshots(taskId: string | null, agentState: string) {
     
     if (agentState === 'working') {
       startPolling(taskId);
+      // Fetch immediately when polling starts to show snapshots without delay
+      fetchSnapshots();
     } else {
       stopPolling();
       // Do a final fetch when the agent finishes to capture the last screenshot
