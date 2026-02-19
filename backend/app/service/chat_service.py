@@ -39,7 +39,7 @@ from app.service.task import (
     set_current_task_id,
 )
 from app.utils.event_loop_utils import set_main_event_loop
-from app.utils.file_utils import get_working_directory
+from app.utils.file_utils import get_working_directory, process_attaches
 from app.utils.triage import (
     ComplexityLevel,
     TriageResult,
@@ -222,7 +222,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 # tracer.start()
                 if start_event_loop is True:
                     question = options.question
-                    attaches_to_use = options.attaches
+                    attaches_raw = options.attaches
                     logger.info(
                         "[NEW-QUESTION] Initial question"
                         " from options.question: "
@@ -232,7 +232,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 else:
                     assert isinstance(item, ActionImproveData)
                     question = item.data.question
-                    attaches_to_use = (
+                    attaches_raw = (
                         item.data.attaches
                         if item.data.attaches
                         else options.attaches
@@ -242,6 +242,17 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         "question from "
                         "ActionImproveData: "
                         f"'{question[:100]}...'"
+                    )
+
+                # Process attachments: convert base64 images to file paths
+                working_directory = get_working_directory(options)
+                attaches_to_use = process_attaches(
+                    attaches_raw, working_directory
+                ) if attaches_raw else []
+                if attaches_to_use:
+                    logger.info(
+                        f"[NEW-QUESTION] Processed {len(attaches_to_use)} "
+                        f"attachments: {[Path(p).name for p in attaches_to_use]}"
                     )
 
                 if is_exceeded:
