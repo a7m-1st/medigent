@@ -274,6 +274,7 @@ export function useChat(): UseChatReturn {
         summary_prompt: config?.summary_prompt || '',
         extra_params: config?.extra_params ?? null,
         search_config: config?.search_config ?? null,
+        use_simulated_tool_calling: false //update this if using medgemma as main model
       };
       await startChat(chatData);
     },

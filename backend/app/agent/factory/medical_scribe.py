@@ -21,8 +21,7 @@ from app.utils.file_utils import get_working_directory
 async def medical_scribe_agent(options: Chat):
     """Create Medical Scribe agent (Gemini 3 - Documentation)
     
-    This agent uses primary_agent config (Gemini 3) for report generation.
-    Falls back to global Chat config if primary_agent not provided.
+    This agent uses global Chat config for report generation.
     """
     working_directory = get_working_directory(options)
     logger.info(
@@ -30,14 +29,13 @@ async def medical_scribe_agent(options: Chat):
         f"in directory: {working_directory}"
     )
     
-    # Get effective configuration
-    global_config = AgentConfig(
+    # Get effective configuration from global Chat config
+    effective_config = AgentConfig(
         api_url=options.api_url,
         model_type=options.model_type,
         model_platform=options.model_platform,
         api_key=options.api_key,
     )
-    effective_config = options.primary_agent.get_effective_config(global_config) if options.primary_agent else global_config
     
     message_integration = ToolkitMessageIntegration(
         message_handler=HumanToolkit(

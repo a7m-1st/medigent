@@ -20,7 +20,7 @@ async def attending_physician_agent(options: Chat):
     """Create Attending Physician agent (MedGemma 4B - Clinical Diagnosis)
     
     This agent uses secondary_agent config (MedGemma 4B) for diagnosis and treatment planning.
-    Falls back to primary_agent config, then global Chat config if not provided.
+    Falls back to global Chat config if not provided.
     """
     working_directory = get_working_directory(options)
     logger.info(
@@ -29,7 +29,7 @@ async def attending_physician_agent(options: Chat):
     )
     
     # Get effective configuration
-    # secondary_agent -> primary_agent -> Chat global config
+    # secondary_agent -> Chat global config
     global_config = AgentConfig(
         api_url=options.api_url,
         model_type=options.model_type,
@@ -40,9 +40,6 @@ async def attending_physician_agent(options: Chat):
     if options.secondary_agent:
         # Use secondary agent config with fallback to global
         effective_config = options.secondary_agent.get_effective_config(global_config)
-    elif options.primary_agent:
-        # Fallback to primary agent config
-        effective_config = options.primary_agent.get_effective_config(global_config)
     else:
         # Use global config
         effective_config = global_config
@@ -95,6 +92,6 @@ async def attending_physician_agent(options: Chat):
             HumanToolkit.toolkit_name(),
             NoteTakingToolkit.toolkit_name(),
         ],
-        support_native_tool_calling=not options.use_simulated_tool_calling,
+        support_native_tool_calling=not effective_config.use_simulated_tool_calling,
         custom_model_config=custom_config,
     )

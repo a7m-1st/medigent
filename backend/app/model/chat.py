@@ -44,6 +44,7 @@ class AgentConfig(BaseModel):
     model_type: str | None = None
     model_platform: str | None = None
     api_key: str | None = None
+    use_simulated_tool_calling: bool = False
     
     def get_effective_config(self, fallback: "AgentConfig") -> "AgentConfig":
         """Returns a new AgentConfig with fallbacks applied."""
@@ -52,6 +53,7 @@ class AgentConfig(BaseModel):
             model_type=self.model_type or fallback.model_type,
             model_platform=self.model_platform or fallback.model_platform,
             api_key=self.api_key or fallback.api_key,
+            use_simulated_tool_calling=self.use_simulated_tool_calling or fallback.use_simulated_tool_calling,
         )
 
 class Chat(BaseModel):
@@ -84,10 +86,8 @@ class Chat(BaseModel):
     # like MedGemma, local LLMs, or other open-source models
     use_simulated_tool_calling: bool = False
     # Medical workforce model configurations
-    # primary_agent: For Gemini 3 agents (Chief of Medicine, Clinical Researcher, Medical Scribe)
     # secondary_agent: For MedGemma 4B agents (Radiologist, Attending Physician, Clinical Pharmacologist)
     # Falls back to Chat global config if not provided
-    primary_agent: AgentConfig | None = None
     secondary_agent: AgentConfig | None = None
 
     @model_validator(mode="before")
@@ -108,6 +108,15 @@ class Chat(BaseModel):
                 env_url = os.getenv("API_URL", "")
                 if env_url:
                     data["api_url"] = env_url
+            
+            # Set default secondary_agent (MedGemma) configuration if not provided
+            if not data.get("secondary_agent"):
+                data["secondary_agent"] = {
+                    "api_url": os.getenv("MEDGEMMA_API_URL", "https://med.awelkaircodes.org"),
+                    "model_platform": os.getenv("MEDGEMMA_MODEL_PLATFORM", "openai-compatible"),
+                    "model_type": os.getenv("MEDGEMMA_MODEL_TYPE", "medgemma-4b"),
+                    "use_simulated_tool_calling": True
+                }
         return data
 
     @field_validator("model_type")
