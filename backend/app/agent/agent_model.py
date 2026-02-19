@@ -1,5 +1,3 @@
-
-
 import logging
 import uuid
 from collections.abc import Callable
@@ -120,6 +118,10 @@ def agent_model(
             )
             model_platform_enum = None
 
+    logger.info(
+        f"Creating model with platform={effective_config['model_platform']}, "
+        f"type={effective_config['model_type']}, url={effective_config['api_url']}"
+    )
     model = ModelFactory.create(
         model_platform=effective_config["model_platform"].lower(),
         model_type=effective_config["model_type"],
