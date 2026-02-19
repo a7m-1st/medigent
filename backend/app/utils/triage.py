@@ -209,12 +209,3 @@ async def evaluate_task_complexity(
             suggested_agents=[],
             direct_answer=None,
         )
-
-
-# Agent name mapping for frontend display
-AGENT_DISPLAY_NAMES = {
-    "browser_agent": "Browser Agent",
-    "developer_agent": "Developer Agent",
-    "document_agent": "Document Agent",
-    "multi_modal_agent": "Multi-Modal Agent",
-}
