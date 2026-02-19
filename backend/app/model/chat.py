@@ -113,7 +113,7 @@ class Chat(BaseModel):
             if not data.get("secondary_agent"):
                 data["secondary_agent"] = {
                     "api_url": os.getenv("MEDGEMMA_API_URL", "https://med.awelkaircodes.org/v1"),
-                    "model_platform": os.getenv("MEDGEMMA_MODEL_PLATFORM", "openai-compatible"),
+                    "model_platform": os.getenv("MEDGEMMA_MODEL_PLATFORM", "openai-compatible-model"),
                     "model_type": os.getenv("MEDGEMMA_MODEL_TYPE", "medgemma-4b"),
                     "use_simulated_tool_calling": True
                 }
