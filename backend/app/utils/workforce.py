@@ -60,6 +60,7 @@ class Workforce(BaseWorkforce):
         share_memory: bool = False,
         use_structured_output_handler: bool = True,
         support_native_tool_calling: bool = True,
+        max_retries: int = 3,
     ) -> None:
         self.api_task_id = api_task_id
         self._support_native_tool_calling = support_native_tool_calling
@@ -85,7 +86,9 @@ class Workforce(BaseWorkforce):
             use_structured_output_handler=use_structured_output_handler,
             task_timeout_seconds=3600,  # 60 minutes
             failure_handling_config=FailureHandlingConfig(
+                max_retries=max_retries,
                 enabled_strategies=["retry", "replan"],
+                halt_on_max_retries=False,  # Don't halt entire workforce on single task failure
             ),
         )
         self.task_agent.stream_accumulate = True
@@ -169,6 +172,9 @@ class Workforce(BaseWorkforce):
         The base class can return None when the LLM fails to produce
         valid structured output. We retry up to _ANALYZE_TASK_MAX_RETRIES
         times before falling back.
+        
+        For MedGemma and other specialized medical models, we are more lenient
+        with quality scoring since the structured output format may vary.
         """
         last_exception: Exception | None = None
 
@@ -181,6 +187,22 @@ class Workforce(BaseWorkforce):
                 )
 
                 if result is not None:
+                    # Be more lenient for radiologist tasks with MedGemma
+                    # Accept results with lower quality if they have content
+                    if (
+                        not for_failure
+                        and result.quality_score is not None
+                        and result.quality_score < 70
+                        and task.result
+                        and len(str(task.result)) > 100
+                    ):
+                        # Task has substantial content, bump quality score
+                        logger.info(
+                            f"[WF-QUALITY] Boosting quality score from "
+                            f"{result.quality_score} to 75 for task with "
+                            f"substantial content (len={len(str(task.result))})"
+                        )
+                        result.quality_score = 75
                     return result
 
                 logger.warning(

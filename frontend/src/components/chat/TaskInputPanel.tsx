@@ -131,7 +131,7 @@ export const TaskInputPanel: React.FC = () => {
           api_url: DEFAULT_MODEL_API_URL,
           language: "en",
           browser_port: 9222,
-          max_retries: 3,
+          max_retries: 5,
           allow_local_system: false,
           installed_mcp: { mcpServers: {} },
           bun_mirror: "",

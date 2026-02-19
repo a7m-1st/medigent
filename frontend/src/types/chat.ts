@@ -44,7 +44,7 @@ export const ChatSchema = z.object({
   api_url: z.string().nullable().optional(),
   language: z.string().default('en'),
   browser_port: z.number().default(9222),
-  max_retries: z.number().default(3),
+  max_retries: z.number().default(5),
   allow_local_system: z.boolean().default(false),
   installed_mcp: z.record(z.string(), z.unknown()).default({}),
   bun_mirror: z.string().default(''),

@@ -1309,6 +1309,7 @@ the current date.
         if model_platform_enum == ModelPlatformType.OPENAI
         else True,
         support_native_tool_calling=support_native_tool_calling,
+        max_retries=options.max_retries,
     )
 
     # Worker descriptions for each agent type (legacy + medical)
