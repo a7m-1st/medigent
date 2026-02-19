@@ -2,7 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import type { ChatMessage } from '@/types';
-import { Bot, User, Info, FileText, CheckCircle2, ExternalLink } from 'lucide-react';
+import { Bot, User, Info, FileText, CheckCircle2, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MessageBubbleProps {
@@ -10,7 +10,7 @@ interface MessageBubbleProps {
 }
 
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
-  const { role, content } = message;
+  const { role, content, images } = message;
 
   // System messages render as centered info pills
   if (role === 'system') {
@@ -65,6 +65,23 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
         {/* Message bubble */}
         {isUser ? (
           <div className="bg-user-bubble border border-user-bubble-border rounded-2xl rounded-tr-sm px-4 py-3 text-sm text-foreground leading-relaxed shadow-sm">
+            {/* Attached images */}
+            {images && images.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {images.map((img, idx) => (
+                  <div
+                    key={idx}
+                    className="relative w-20 h-20 rounded-lg overflow-hidden border border-border bg-background-secondary"
+                  >
+                    <img
+                      src={img}
+                      alt={`Attachment ${idx + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
             <p className="whitespace-pre-wrap break-words">{content}</p>
           </div>
         ) : (

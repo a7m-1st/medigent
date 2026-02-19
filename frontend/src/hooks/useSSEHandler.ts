@@ -140,13 +140,11 @@ export function useSSEHandler() {
   // ============================================
 
   function handleConfirmed(data: SSEConfirmedEvent['data']) {
+    // Clear any previous errors
     chatStore.setError(null);
-    chatStore.addMessage({
-      id: `confirmed-${Date.now()}`,
-      role: 'user',
-      content: data.question,
-      timestamp: new Date().toISOString(),
-    });
+    // Note: User message is now added immediately in TaskInputPanel with images
+    // This confirmed event just signals the backend received the question
+    console.log('[SSE] Question confirmed:', data.question.slice(0, 50) + '...');
   }
 
   function handleCreateAgent(data: SSECreateAgentEvent['data']) {

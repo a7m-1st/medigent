@@ -27,6 +27,17 @@ const AGENT_ICONS: Record<string, typeof Bot> = {
   multi_modal_agent: ImageIcon,
 };
 
+// Format token count for display (e.g., 340K, 1.2M)
+function formatTokenCount(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    return `${(tokens / 1_000_000).toFixed(1)}M tokens`;
+  }
+  if (tokens >= 1_000) {
+    return `${(tokens / 1_000).toFixed(0)}K tokens`;
+  }
+  return `${tokens} tokens`;
+}
+
 // Agent color mapping
 const AGENT_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   browser_agent: {
@@ -180,7 +191,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent }) => {
         {/* Token count */}
         {agent.tokensUsed > 0 && (
           <span className="text-[10px] text-foreground-muted">
-            {agent.tokensUsed.toLocaleString()} tokens
+            {formatTokenCount(agent.tokensUsed)}
           </span>
         )}
 
