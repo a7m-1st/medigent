@@ -1,5 +1,3 @@
-
-
 import json
 import logging
 import re
@@ -7,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 from camel.types import ModelType, RoleType
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.model.enums import DEFAULT_SUMMARY_PROMPT, Status  # noqa: F401
 
@@ -33,9 +31,12 @@ class QuestionAnalysisResult(BaseModel):
 McpServers = dict[Literal["mcpServers"], dict[str, dict]]
 
 PLATFORM_MAPPING = {
+    "MedGemma": "openai-compatible-model",
     "Z.ai": "openai-compatible-model",
     "ModelArk": "openai-compatible-model",
 }
+
+MEDGEMMA_DEFAULT_URL = "https://med.awelkaircodes.org/v1"
 
 
 class Chat(BaseModel):
@@ -68,6 +69,16 @@ class Chat(BaseModel):
     def map_model_platform(cls, v: str) -> str:
         return PLATFORM_MAPPING.get(v, v)
 
+    @model_validator(mode="after")
+    def set_medgemma_defaults(self):
+        """Auto-set default URL for MedGemma if not provided."""
+        if self.model_platform == "MedGemma" and not self.api_url:
+            self.api_url = MEDGEMMA_DEFAULT_URL
+            logger.info(
+                f"MedGemma platform detected, using default URL: {MEDGEMMA_DEFAULT_URL}"
+            )
+        return self
+
     @field_validator("model_type")
     @classmethod
     def check_model_type(cls, model_type: str):
@@ -77,7 +88,9 @@ class Chat(BaseModel):
             return enum_member.value
         except KeyError:
             # Not a valid enum name, return as-is
-            logger.debug(f"model_type '{model_type}' is not a valid ModelType enum")
+            logger.debug(
+                f"model_type '{model_type}' is not a valid ModelType enum"
+            )
         return model_type
 
     def get_bun_env(self) -> dict[str, str]:
