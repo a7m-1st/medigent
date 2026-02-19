@@ -208,7 +208,6 @@ For each image:
 
 <tools>
 - **ImageAnalysisToolkit**: Analyze medical images via vision models
-- **VideoAnalysisToolkit**: Review medical procedures/videos
 - **NoteTakingToolkit**: Record detailed findings in 'radiology_findings' note
 </tools>
 

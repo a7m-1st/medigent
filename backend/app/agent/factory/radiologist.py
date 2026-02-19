@@ -12,7 +12,6 @@ from app.agent.prompt import RADIOLOGIST_PROMPT
 from app.agent.toolkit.human_toolkit import HumanToolkit
 from app.agent.toolkit.image_analysis_toolkit import ImageAnalysisToolkit
 from app.agent.toolkit.note_taking_toolkit import NoteTakingToolkit
-from app.agent.toolkit.video_analysis_toolkit import VideoAnalysisToolkit
 from app.agent.utils import NOW_STR
 from app.model.chat import AgentConfig, Chat
 from app.service.task import Agents
@@ -67,11 +66,11 @@ async def radiologist_agent(options: Chat):
     )
     image_analysis_toolkit = message_integration.register_toolkits(image_analysis_toolkit)
     
-    video_analysis_toolkit = VideoAnalysisToolkit(
-        options.project_id,
-        working_directory=working_directory,
-        model=toolkit_model,
-    )
+    # video_analysis_toolkit = VideoAnalysisToolkit(
+    #     options.project_id,
+    #     working_directory=working_directory,
+    #     model=toolkit_model,
+    # )
     video_analysis_toolkit = message_integration.register_toolkits(video_analysis_toolkit)
     
     note_toolkit = NoteTakingToolkit(
@@ -115,7 +114,7 @@ async def radiologist_agent(options: Chat):
         tools,
         tool_names=[
             ImageAnalysisToolkit.toolkit_name(),
-            VideoAnalysisToolkit.toolkit_name(),
+            # VideoAnalysisToolkit.toolkit_name(),
             HumanToolkit.toolkit_name(),
             NoteTakingToolkit.toolkit_name(),
         ],
