@@ -71,6 +71,8 @@ export const ChatMessageSchema = z.object({
   timestamp: z.string(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   task_id: z.string().optional(),
+  // Attachments: images as base64 data URLs
+  images: z.array(z.string()).optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 

@@ -2,7 +2,7 @@
 import platform
 
 from camel.messages import BaseMessage
-from camel.models import OpenAIAudioModels
+from camel.models import ModelFactory, OpenAIAudioModels
 from camel.toolkits import ToolkitMessageIntegration
 from camel.types import ModelPlatformType
 
@@ -35,7 +35,15 @@ def multi_modal_agent(options: Chat):
             options.project_id, Agents.multi_modal_agent
         ).send_message_to_user
     )
-    image_analysis_toolkit = ImageAnalysisToolkit(options.project_id)
+    toolkit_model = ModelFactory.create(
+        model_platform=options.model_platform.lower(),
+        model_type=options.model_type,
+        api_key=options.api_key,
+        url=options.api_url,
+    )
+    image_analysis_toolkit = ImageAnalysisToolkit(
+        options.project_id, model=toolkit_model
+    )
     image_analysis_toolkit = message_integration.register_toolkits(
         image_analysis_toolkit
     )

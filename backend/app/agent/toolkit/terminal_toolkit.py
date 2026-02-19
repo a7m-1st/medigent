@@ -337,6 +337,46 @@ class TerminalToolkit(BaseTerminalToolkit, AbstractToolkit):
                 exc_info=True,
             )
 
+    def _win_blocking_exec(self, command: str, timeout: float) -> str:
+        """Run a blocking command on Windows with encoding error tolerance.
+
+        The CAMEL base class creates ``subprocess.Popen`` with
+        ``encoding="utf-8"`` but without ``errors="replace"``.  On non-English
+        Windows the system codepage (e.g. cp936/GBK) leaks into pipe output and
+        crashes the CPython ``_readerthread``.  This method replicates the
+        blocking path with ``errors="replace"`` so undecodable bytes are
+        replaced with U+FFFD instead of raising ``UnicodeDecodeError``.
+        """
+        env_vars = os.environ.copy()
+        env_vars["PYTHONUNBUFFERED"] = "1"
+
+        # Apply venv activation if available (mirrors base class logic)
+        env_path = self._get_venv_path()
+        if env_path:
+            activate = os.path.join(env_path, "Scripts", "activate.bat")
+            command = f'call "{activate}" && {command}'
+
+        proc = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.PIPE,
+            shell=True,
+            text=True,
+            cwd=self.working_dir,
+            encoding="utf-8",
+            errors="replace",
+            env=env_vars,
+        )
+        try:
+            stdout, _ = proc.communicate(timeout=timeout)
+            return stdout or ""
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, _ = proc.communicate()
+            partial = stdout or ""
+            return partial + f"\n[Command timed out after {timeout}s]"
+
     def shell_exec(
         self,
         command: str,
@@ -356,19 +396,32 @@ class TerminalToolkit(BaseTerminalToolkit, AbstractToolkit):
         Returns:
             str: The output of the command execution.
         """
-        # Auto-generate ID if not provided
         if id is None:
             import time
 
             id = f"auto_{int(time.time() * 1000)}"
 
-        result = super().shell_exec(
-            id=id, command=command, block=block, timeout=timeout
-        )
+        is_windows = platform.system() == "Windows"
 
-        # If the command executed successfully but returned empty output,
-        # provide a clear success message to help the AI agent understand
-        # that the command completed without error.
+        if is_windows:
+            command = f"chcp 65001 >nul 2>&1 && {command}"
+
+        if block and is_windows:
+            # Safe-mode check (mirrors base class)
+            if self.safe_mode:
+                is_safe, message = self._sanitize_command(command)
+                if not is_safe:
+                    return f"Error: {message}"
+                command = message
+
+            result = self._win_blocking_exec(command, timeout)
+            self._write_to_log(self.blocking_log_file, f"> {command}\n{result}")
+            self._update_terminal_output(result)
+        else:
+            result = super().shell_exec(
+                id=id, command=command, block=block, timeout=timeout
+            )
+
         if block and result == "":
             return "Command executed successfully (no output)."
 

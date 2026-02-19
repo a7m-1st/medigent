@@ -33,10 +33,9 @@ export function useSnapshots(taskId: string | null, agentState: string) {
       startPolling(taskId);
     } else {
       stopPolling();
+      // Do a final fetch when the agent finishes to capture the last screenshot
+      fetchSnapshots();
     }
-    
-    // Initial fetch
-    fetchSnapshots();
   }, [taskId, agentState, startPolling, stopPolling, fetchSnapshots]);
 
   // Polling interval

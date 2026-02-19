@@ -25,6 +25,9 @@ export const AgentStatusSchema = z.object({
   currentTaskContent: z.string().optional(),
   currentToolkit: z.string().optional(),
   currentMethod: z.string().optional(),
+  // Full input/output for "thinking" display
+  lastInput: z.string().optional(),      // Full activate_agent message
+  lastOutput: z.string().optional(),     // Full deactivate_agent message
   tools: z.array(z.string()).default([]),
   tokensUsed: z.number().default(0),
   lastActivity: z.date(),
@@ -63,7 +66,7 @@ interface AgentStatusState {
   agents: Record<string, AgentStatus>;
   // Reverse lookup: agent_id -> agent_name (for events that only have agent_id)
   idToName: Record<string, string>;
-  
+
   // Actions
   createAgent: (agentId: string, agentName: string, tools: string[]) => void;
   setAgentWorking: (agentName: string, agentId: string, taskId: string, content: string) => void;
@@ -74,7 +77,7 @@ interface AgentStatusState {
   addAgentActivity: (agentName: string, type: ActivityEntry['type'], message: string) => void;
   registerAgentId: (agentName: string, agentId: string) => void;
   reset: () => void;
-  
+
   // Getters
   getAgentByName: (name: string) => AgentStatus | undefined;
   getAgentNameById: (id: string) => string | undefined;
@@ -88,7 +91,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
     // Initial state
     agents: {},
     idToName: {},
-    
+
     /**
      * Create a new agent entry (only for main 4 agents), keyed by name
      */
@@ -96,11 +99,11 @@ export const useAgentStatusStore = create<AgentStatusState>()(
       if (!MAIN_AGENT_NAMES.includes(agentName as MainAgentName)) {
         return;
       }
-      
+
       set((state) => {
         // Register the ID mapping
         state.idToName[agentId] = agentName;
-        
+
         if (state.agents[agentName]) {
           // Agent already exists (can happen with multiple create_agent events)
           // Just add the new ID and update tools
@@ -139,7 +142,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
         }
       });
     },
-    
+
     /**
      * Register an agent ID for name-based lookup
      */
@@ -151,7 +154,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
         }
       });
     },
-    
+
     /**
      * Mark agent as working on a task (looked up by name)
      */
@@ -159,11 +162,13 @@ export const useAgentStatusStore = create<AgentStatusState>()(
       set((state) => {
         // Register the ID
         state.idToName[agentId] = agentName;
-        
+
         if (state.agents[agentName]) {
           state.agents[agentName].state = 'working';
           state.agents[agentName].currentTaskId = taskId;
           state.agents[agentName].currentTaskContent = content.slice(0, 200);
+          state.agents[agentName].lastInput = content; // Store full input for "thinking" display
+          state.agents[agentName].lastOutput = undefined; // Clear previous output
           state.agents[agentName].lastActivity = new Date();
           if (!state.agents[agentName].knownIds.includes(agentId)) {
             state.agents[agentName].knownIds.push(agentId);
@@ -181,22 +186,23 @@ export const useAgentStatusStore = create<AgentStatusState>()(
         }
       });
     },
-    
+
     /**
      * Mark agent as completed (looked up by name)
      */
     setAgentCompleted: (agentName: string, agentId: string, message: string, tokens?: number) => {
       set((state) => {
         state.idToName[agentId] = agentName;
-        
+
         if (state.agents[agentName]) {
           // Check if the message indicates an error
-          const isError = message.includes('Error') || message.includes('error') || 
+          const isError = message.includes('Error') || message.includes('error') ||
                           message.includes('Unable to process') || message.includes('429');
-          
+
           state.agents[agentName].state = isError ? 'error' : 'completed';
           state.agents[agentName].currentToolkit = undefined;
           state.agents[agentName].currentMethod = undefined;
+          state.agents[agentName].lastOutput = message; // Store full output
           if (isError) {
             state.agents[agentName].currentTaskContent = message.slice(0, 200);
           }
@@ -217,7 +223,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
         }
       });
     },
-    
+
     /**
      * Mark agent as error
      */
@@ -239,7 +245,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
         }
       });
     },
-    
+
     /**
      * Set current toolkit being used by agent (looked up by name)
      */
@@ -262,7 +268,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
         }
       });
     },
-    
+
     /**
      * Clear current toolkit when done
      */
@@ -288,7 +294,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
         }
       });
     },
-    
+
     /**
      * Add a manual activity entry
      */
@@ -308,7 +314,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
         }
       });
     },
-    
+
     /**
      * Reset all agents (for new chat)
      */
@@ -318,21 +324,21 @@ export const useAgentStatusStore = create<AgentStatusState>()(
         state.idToName = {};
       });
     },
-    
+
     /**
      * Get agent by name
      */
     getAgentByName: (name: string) => {
       return get().agents[name];
     },
-    
+
     /**
      * Get agent name by any known ID
      */
     getAgentNameById: (id: string) => {
       return get().idToName[id];
     },
-    
+
     /**
      * Get all main agents in order
      */

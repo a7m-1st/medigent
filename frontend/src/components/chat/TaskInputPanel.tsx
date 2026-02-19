@@ -4,8 +4,8 @@ import { cn } from '@/lib/utils';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { useChatStore } from '@/stores/chatStore';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Paperclip, PauseCircle, Send, X } from 'lucide-react';
-import React, { useRef, useState } from 'react';
+import { Paperclip, PauseCircle, Send, Upload, X } from 'lucide-react';
+import React, { useCallback, useRef, useState } from 'react';
 
 // Default model configuration from environment variables
 const DEFAULT_MODEL_PLATFORM = import.meta.env.VITE_DEFAULT_MODEL_PLATFORM || 'GEMINI';
@@ -15,49 +15,119 @@ const DEFAULT_MODEL_API_URL = import.meta.env.VITE_DEFAULT_MODEL_API_URL || null
 export const TaskInputPanel: React.FC = () => {
   const [message, setMessage] = useState('');
   const [images, setImages] = useState<string[]>([]);
+  const [isFocused, setIsFocused] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+  const dropZoneRef = useRef<HTMLDivElement>(null);
+
   const { sendMessage, stopChat, isLoading, isStreaming } = useChat();
-  const { geminiApiKey } = useApiConfigStore();
+  const { geminiApiKey, backendHasApiKey } = useApiConfigStore();
   const wasStopped = useChatStore((state) => state.wasStopped);
-  
+
   const isProcessing = (isStreaming || isLoading) && !wasStopped;
+  const hasContent = message.trim() || images.length > 0;
+  const canSend = hasContent && !isProcessing;
+
+  // Process files (from input or drag & drop)
+  const processFiles = useCallback((files: FileList | File[]) => {
+    Array.from(files).forEach(file => {
+      // Only accept image files
+      if (!file.type.startsWith('image/')) {
+        console.warn('Skipping non-image file:', file.name);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImages(prev => [...prev, reader.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+  }, []);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
-      Array.from(files).forEach(file => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setImages(prev => [...prev, reader.result as string]);
-        };
-        reader.readAsDataURL(file);
-      });
+      processFiles(files);
     }
+    // Reset input so same file can be selected again
+    e.target.value = '';
   };
 
   const removeImage = (index: number) => {
     setImages(prev => prev.filter((_, i) => i !== index));
   };
 
+  // Drag & Drop handlers
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isProcessing) return;
+    setIsDragging(true);
+  }, [isProcessing]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only set isDragging to false if we're leaving the drop zone entirely
+    if (dropZoneRef.current && !dropZoneRef.current.contains(e.relatedTarget as Node)) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    if (isProcessing) return;
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      processFiles(files);
+    }
+  }, [isProcessing, processFiles]);
+
   const handleSend = async () => {
     console.log('Send clicked! Message:', message, 'Processing:', isProcessing, 'API Key exists:', !!geminiApiKey);
     if ((message.trim() || images.length > 0) && !isProcessing) {
+      // Check if API key is configured (frontend or backend)
+      if (!geminiApiKey && !backendHasApiKey) {
+        console.error('No API key configured!');
+        alert('Please enter your Gemini API key in the settings, or configure it in the backend .env file.');
+        return;
+      }
+
+      // Capture current values before clearing
+      const currentMessage = message;
+      const currentImages = [...images];
+
+      // Clear input immediately for better UX
+      setMessage('');
+      setImages([]);
+
+      // Add user message to chat immediately (with images)
+      useChatStore.getState().addMessage({
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: currentMessage,
+        timestamp: new Date().toISOString(),
+        images: currentImages.length > 0 ? currentImages : undefined,
+      });
+
       try {
-        console.log('Sending message:', message);
-        
-        // Check if API key is configured
-        if (!geminiApiKey) {
-          console.error('No API key configured!');
-          alert('Please enter your Gemini API key in the settings first.');
-          return;
-        }
-        
+        console.log('Sending message:', currentMessage);
+
         // Use sendMessage which automatically detects whether to use improve or start new chat
+        // If no frontend key, send empty string — backend will use its .env default
         await sendMessage(message, images, {
           model_platform: DEFAULT_MODEL_PLATFORM,
           model_type: DEFAULT_MODEL_TYPE,
-          api_key: geminiApiKey,
+          api_key: geminiApiKey || "",
           api_url: DEFAULT_MODEL_API_URL,
           language: "en",
           browser_port: 9222,
@@ -71,16 +141,13 @@ export const TaskInputPanel: React.FC = () => {
           extra_params: null,
           search_config: null
         });
-        
+
         console.log('Message sent successfully');
-        
-        // Only clear message and images if the chat wasn't stopped by the user
-        if (!wasStopped) {
-          setMessage('');
-          setImages([]);
-        }
       } catch (error) {
         console.error('Failed to send:', error);
+        // Restore input on error so user can retry
+        setMessage(currentMessage);
+        setImages(currentImages);
         if (error instanceof Error) {
           alert('Error: ' + error.message);
         }
@@ -89,33 +156,70 @@ export const TaskInputPanel: React.FC = () => {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Block Enter key when processing
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      if (canSend) {
+        handleSend();
+      }
     }
   };
 
   return (
-    <div className="h-full flex flex-col bg-zinc-950 border-t border-white/5">
+    <div
+      ref={dropZoneRef}
+      className={cn(
+        "flex flex-col bg-background relative transition-colors",
+        isDragging && "bg-accent/5"
+      )}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {/* Drag overlay */}
+      <AnimatePresence>
+        {isDragging && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-10 flex items-center justify-center bg-accent/10 border-2 border-dashed border-accent rounded-xl m-2 pointer-events-none"
+          >
+            <div className="flex flex-col items-center gap-2 text-accent">
+              <Upload className="w-8 h-8" />
+              <span className="text-sm font-medium">Drop images here</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Attached Images */}
       <AnimatePresence>
         {images.length > 0 && (
-          <motion.div 
+          <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className="flex flex-wrap gap-2 px-4 pt-3"
           >
             {images.map((img, i) => (
-              <div key={i} className="relative group w-16 h-16 rounded-lg overflow-hidden border border-white/10">
+              <motion.div
+                key={i}
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.8, opacity: 0 }}
+                className="relative group w-16 h-16 rounded-lg overflow-hidden border border-border bg-background-secondary"
+              >
                 <img src={img} alt="upload" className="w-full h-full object-cover" />
-                <button 
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
+                <button
                   onClick={() => removeImage(i)}
-                  className="absolute top-1 right-1 p-1 bg-black/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-1 right-1 p-1 bg-background/90 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
                 >
-                  <X className="w-3 h-3 text-white" />
+                  <X className="w-3 h-3 text-foreground" />
                 </button>
-              </div>
+              </motion.div>
             ))}
           </motion.div>
         )}
@@ -123,34 +227,48 @@ export const TaskInputPanel: React.FC = () => {
 
       {/* Input Area */}
       <div className="flex-1 flex items-center gap-3 p-4">
-        <input 
-          type="file" 
-          accept="image/*" 
-          multiple 
-          className="hidden" 
-          ref={fileInputRef} 
-          onChange={handleImageUpload} 
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          ref={fileInputRef}
+          onChange={handleImageUpload}
         />
-        
+
         <Button
           variant="ghost"
           size="icon"
-          className="w-10 h-10 text-zinc-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-xl shrink-0"
+          className={cn(
+            "w-10 h-10 rounded-xl shrink-0 transition-colors",
+            "text-foreground-muted hover:text-accent hover:bg-accent-light"
+          )}
           onClick={() => fileInputRef.current?.click()}
           disabled={isProcessing}
         >
           <Paperclip className="w-5 h-5" />
         </Button>
 
-        <div className="flex-1 relative">
+        <div
+          className={cn(
+            "flex-1 relative rounded-xl transition-all duration-200",
+            isFocused && "ring-2 ring-accent/20"
+          )}
+        >
           <input
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
             placeholder="Enter your task or question..."
-            // disabled={isProcessing}
-            className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-blue-500/50 transition-colors"
+            className={cn(
+              "w-full bg-input border border-input-border rounded-xl px-4 py-3",
+              "text-foreground placeholder:text-foreground-muted",
+              "focus:outline-none focus:border-accent transition-colors",
+              isProcessing && "opacity-60"
+            )}
           />
         </div>
 
@@ -158,23 +276,23 @@ export const TaskInputPanel: React.FC = () => {
           <Button
             size="icon"
             onClick={stopChat}
-            className="w-10 h-10 rounded-xl transition-all duration-300 shrink-0 bg-red-600 hover:bg-red-500 text-white shadow-[0_0_15px_rgba(220,38,38,0.4)]"
+            className="w-10 h-10 rounded-xl transition-all duration-300 shrink-0 bg-error hover:bg-error/90 text-white shadow-glow-error"
           >
             <PauseCircle className="w-4 h-4" />
           </Button>
         ) : (
           <Button
             size="icon"
-            disabled={(!message.trim() && images.length === 0) || isLoading}
+            disabled={!canSend}
             onClick={() => {
               console.log('Button clicked directly');
               handleSend();
             }}
             className={cn(
               "w-10 h-10 rounded-xl transition-all duration-300 shrink-0",
-              message.trim() || images.length > 0
-                ? "bg-blue-600 hover:bg-blue-500 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]"
-                : "bg-zinc-800 text-zinc-500"
+              canSend
+                ? "bg-accent hover:bg-accent-hover text-accent-foreground shadow-glow"
+                : "bg-background-tertiary text-foreground-muted cursor-not-allowed"
             )}
           >
             <Send className="w-4 h-4" />
@@ -183,11 +301,11 @@ export const TaskInputPanel: React.FC = () => {
       </div>
 
       {/* Status Bar */}
-      <div className="px-4 pb-3 flex items-center justify-center gap-4 text-[10px] text-zinc-600 font-medium uppercase tracking-widest">
+      <div className="px-4 pb-3 flex items-center justify-center gap-4 text-[10px] text-foreground-muted font-medium uppercase tracking-widest">
         <span>Gemini 3 Flash</span>
-        <span className="w-1 h-1 rounded-full bg-zinc-800" />
+        <span className="w-1 h-1 rounded-full bg-border" />
         <span>Multi-Agent System</span>
-        <span className="w-1 h-1 rounded-full bg-zinc-800" />
+        <span className="w-1 h-1 rounded-full bg-border" />
         <span>Encrypted</span>
       </div>
     </div>

@@ -140,13 +140,11 @@ export function useSSEHandler() {
   // ============================================
 
   function handleConfirmed(data: SSEConfirmedEvent['data']) {
+    // Clear any previous errors
     chatStore.setError(null);
-    chatStore.addMessage({
-      id: `confirmed-${Date.now()}`,
-      role: 'user',
-      content: data.question,
-      timestamp: new Date().toISOString(),
-    });
+    // Note: User message is now added immediately in TaskInputPanel with images
+    // This confirmed event just signals the backend received the question
+    console.log('[SSE] Question confirmed:', data.question.slice(0, 50) + '...');
   }
 
   function handleCreateAgent(data: SSECreateAgentEvent['data']) {
@@ -178,7 +176,7 @@ export function useSSEHandler() {
       agentStore.setAgentToolkit(data.agent_name, data.toolkit_name, data.method_name);
       // Only pipe Terminal Toolkit commands into inline terminal output
       if (data.message && data.toolkit_name === 'Terminal Toolkit') {
-        const agent = agentStore.agents[data.agent_name];
+        const agent = useAgentStatusStore.getState().agents[data.agent_name];
         resourceStore.addTerminalOutput(
           data.agent_name,
           data.process_task_id,
@@ -193,7 +191,7 @@ export function useSSEHandler() {
     if (isMainAgent(data.agent_name)) {
       // Only pipe Terminal Toolkit results into inline terminal output
       if (data.message && data.toolkit_name === 'Terminal Toolkit') {
-        const agent = agentStore.agents[data.agent_name];
+        const agent = useAgentStatusStore.getState().agents[data.agent_name];
         resourceStore.addTerminalOutput(
           data.agent_name,
           data.process_task_id,
@@ -238,22 +236,22 @@ export function useSSEHandler() {
 
   function handleAssignTask(data: SSEAssignTaskEvent['data']) {
     // Look up agent name by the assignee_id using the reverse lookup
-    const agentName = agentStore.getAgentNameById(data.assignee_id);
-    const agents = agentStore.agents;
-    const agent = agentName ? agents[agentName] : undefined;
+    const store = useAgentStatusStore.getState();
+    const agentName = store.getAgentNameById(data.assignee_id);
+    const agent = agentName ? store.agents[agentName] : undefined;
     const displayName = agent?.displayName || 'Agent';
-    
+
     taskStore.assignTask(data.task_id, data.assignee_id, displayName);
-    
+
     // Also update task state from the assign event
     taskStore.updateTaskState(data.task_id, data.state.toLowerCase());
-    
+
     // Also update the agent's state if we know who it is
     if (agentName && isMainAgent(agentName)) {
       if (data.state === 'running') {
-        agentStore.setAgentWorking(agentName, data.assignee_id, data.task_id, data.content);
+        store.setAgentWorking(agentName, data.assignee_id, data.task_id, data.content);
       } else if (data.state === 'waiting') {
-        agentStore.addAgentActivity(agentName, 'notice', `Assigned task: ${data.content.slice(0, 100)}...`);
+        store.addAgentActivity(agentName, 'notice', `Assigned task: ${data.content.slice(0, 100)}...`);
       }
     }
   }
@@ -261,15 +259,15 @@ export function useSSEHandler() {
   function handleTaskState(data: SSETaskStateEvent['data']) {
     const normalizedState = data.state.toLowerCase();
     taskStore.updateTaskState(data.task_id, normalizedState);
-    
+
     // If task failed, check if we can identify the agent and update its state
     if (normalizedState === 'failed' && data.result) {
       // Try to find which agent was working on this task
-      const agents = agentStore.agents;
+      const currentAgents = useAgentStatusStore.getState().agents;
       for (const agentName of MAIN_AGENT_NAMES) {
-        const agent = agents[agentName];
+        const agent = currentAgents[agentName];
         if (agent && agent.currentTaskId === data.task_id) {
-          agentStore.setAgentError(agentName, data.result.slice(0, 200));
+          useAgentStatusStore.getState().setAgentError(agentName, data.result.slice(0, 200));
           break;
         }
       }
@@ -278,17 +276,17 @@ export function useSSEHandler() {
 
   function handleTerminal(data: SSTerminalEvent['data']) {
     // Find which agent this terminal output belongs to by checking currentTaskId
-    const agents = agentStore.agents;
+    const currentAgents = useAgentStatusStore.getState().agents;
     let foundAgent: { name: string; displayName: string } | null = null;
-    
+
     for (const agentName of MAIN_AGENT_NAMES) {
-      const agent = agents[agentName];
+      const agent = currentAgents[agentName];
       if (agent && agent.currentTaskId === data.process_task_id) {
         foundAgent = { name: agentName, displayName: agent.displayName };
         break;
       }
     }
-    
+
     if (foundAgent) {
       resourceStore.addTerminalOutput(
         foundAgent.name,
@@ -324,13 +322,13 @@ export function useSSEHandler() {
       content: data.notice,
       timestamp: new Date().toISOString(),
     });
-    
+
     // Also find the agent working on this task and add to its activity log
-    const agents = agentStore.agents;
+    const currentAgents = useAgentStatusStore.getState().agents;
     for (const agentName of MAIN_AGENT_NAMES) {
-      const agent = agents[agentName];
+      const agent = currentAgents[agentName];
       if (agent && agent.currentTaskId === data.process_task_id) {
-        agentStore.addAgentActivity(agentName, 'notice', data.notice);
+        useAgentStatusStore.getState().addAgentActivity(agentName, 'notice', data.notice);
         break;
       }
     }
@@ -347,25 +345,26 @@ export function useSSEHandler() {
 
   function handleEnd(data: SSEEndEvent['data']) {
     taskStore.setFinalSummary(data);
-    
+
     chatStore.addMessage({
       id: `end-${Date.now()}`,
       role: 'assistant',
       content: data,
       timestamp: new Date().toISOString(),
     });
-    
+
     chatStore.setStreaming(false);
-    
+
     // Mark all remaining running/waiting tasks as done
     taskStore.completeRemainingTasks();
-    
+
     // Mark all working agents as completed
-    const agents = agentStore.agents;
+    // Use getState() to get fresh state, not stale closure reference
+    const currentAgents = useAgentStatusStore.getState().agents;
     for (const agentName of MAIN_AGENT_NAMES) {
-      const agent = agents[agentName];
-      if (agent && (agent.state === 'working')) {
-        agentStore.setAgentCompleted(agentName, agent.knownIds[0] || '', 'Session ended', 0);
+      const agent = currentAgents[agentName];
+      if (agent && agent.state === 'working') {
+        useAgentStatusStore.getState().setAgentCompleted(agentName, agent.knownIds[0] || '', 'Task completed', 0);
       }
     }
   }
@@ -374,25 +373,26 @@ export function useSSEHandler() {
     // Detect rate-limit (429) errors
     const msg = data.message || '';
     const isRateLimit = /429|rate.?limit|too many requests|quota.*exceed/i.test(msg);
-    
+
     // Display the error but don't reset connection state
     // SSE will auto-retry on rate limits
     chatStore.setError(msg, isRateLimit ? 'rate_limit' : 'generic');
-    
+
     // Only mark agents as having an error, but keep the session alive
     // so SSE can retry
     if (!isRateLimit) {
       // For non-rate-limit errors, we might want to stop
       chatStore.setStreaming(false);
       chatStore.setLoading(false);
-      
+
       // Cancel all pending tasks and mark working agents as error
+      // Use getState() to get fresh state
       taskStore.cancelPendingTasks();
-      const agents = agentStore.agents;
+      const currentAgents = useAgentStatusStore.getState().agents;
       for (const agentName of MAIN_AGENT_NAMES) {
-        const agent = agents[agentName];
+        const agent = currentAgents[agentName];
         if (agent && agent.state === 'working') {
-          agentStore.setAgentError(agentName, msg.slice(0, 200));
+          useAgentStatusStore.getState().setAgentError(agentName, msg.slice(0, 200));
         }
       }
     }
