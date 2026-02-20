@@ -1,27 +1,27 @@
 import { ApiKeyModal } from '@/components/api-key/ApiKeyModal';
 import { cn } from '@/lib/utils';
-import { useProjectStore } from '@/stores/projectStore';
 import { useUIStore } from '@/stores';
+import { useApiConfigStore } from '@/stores/apiConfigStore';
+import { useProjectStore } from '@/stores/projectStore';
 import {
+  ArrowLeft,
   Calendar,
   FileText,
   FolderOpen,
+  HelpCircle,
   History,
   LayoutDashboard,
   ListChecks,
   Menu,
+  MessageSquare,
   Monitor,
   Moon,
   Plus,
   Settings,
   Sun,
-  HelpCircle,
-  ArrowLeft,
-  MessageSquare,
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useApiConfigStore } from '@/stores/apiConfigStore';
 
 const MOBILE_BREAKPOINT = 1024;
 

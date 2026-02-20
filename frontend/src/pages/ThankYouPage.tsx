@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 
 export const ThankYouPage: React.FC = () => {
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-6 relative overflow-hidden">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-start justify-center p-6 relative overflow-y-auto">
       {/* Background Decorative Elements */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/10 blur-[120px] rounded-full" />

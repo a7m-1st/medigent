@@ -83,7 +83,10 @@ export const DashboardPage: React.FC = () => {
   const ThemeIcon = theme === 'system' ? Monitor : resolvedTheme === 'dark' ? Moon : Sun;
 
   return (
-    <div className="h-screen w-screen bg-background text-foreground flex overflow-hidden">
+    <div className={cn(
+      "bg-background text-foreground flex",
+      isMobile ? "min-h-screen w-full overflow-y-auto" : "h-screen w-screen overflow-hidden"
+    )}>
       <ApiKeyModal />
 
       {/* Left Sidebar Navigation - Hidden on mobile */}
