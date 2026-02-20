@@ -135,7 +135,7 @@ def agent_model(
     if resolved_context_size:
         logger.info(
             f"Agent {agent_name} using token_limit={resolved_context_size} "
-            f"(auto-compaction enabled at ~50% usage)"
+            f"(auto-compaction enabled at ~90% usage)"
         )
 
     model = ModelFactory.create(

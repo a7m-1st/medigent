@@ -5,6 +5,7 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Request, Response
@@ -40,6 +41,10 @@ chat_logger = logging.getLogger("chat_controller")
 
 # SSE timeout configuration (60 minutes in seconds)
 SSE_TIMEOUT_SECONDS = 60 * 60
+
+# Cache configuration for project files
+FILES_CACHE: dict[str, dict[str, Any]] = {}
+FILES_CACHE_TTL_SECONDS = 30  # Cache TTL: 30 seconds
 
 
 class ProjectFile(BaseModel):
@@ -405,6 +410,16 @@ def list_project_files(project_id: str, task_id: str | None = None):
     Returns:
         List of files with name, path, size, and creation time
     """
+    # Check cache first
+    cache_key = f"{project_id}:{task_id}"
+    cached = FILES_CACHE.get(cache_key)
+    if cached and time.time() - cached["timestamp"] < FILES_CACHE_TTL_SECONDS:
+        chat_logger.debug(
+            "Returning cached project files",
+            extra={"project_id": project_id, "task_id": task_id},
+        )
+        return ProjectFilesResponse(**cached["data"])
+
     base_path = Path.home() / "medgemma" / f"project_{project_id}"
 
     if not base_path.exists():
@@ -444,12 +459,20 @@ def list_project_files(project_id: str, task_id: str | None = None):
         },
     )
 
-    return ProjectFilesResponse(
+    response = ProjectFilesResponse(
         project_id=project_id,
         task_id=task_id,
         files=files,
         total_count=len(files),
     )
+
+    # Store in cache
+    FILES_CACHE[cache_key] = {
+        "timestamp": time.time(),
+        "data": response.model_dump(),
+    }
+
+    return response
 
 
 @router.get(

@@ -1119,6 +1119,7 @@ class ListenChatAgent(ChatAgent):
             token_limit=getattr(
                 self.memory.get_context_creator(), "token_limit", None
             ),
+            summarize_threshold=self.summarize_threshold,
             output_language=self._output_language,
             tools=cloned_tools,
             toolkits_to_register_agent=toolkits_to_register,
