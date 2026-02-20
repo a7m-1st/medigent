@@ -1,14 +1,16 @@
 import { cn } from '@/lib/utils';
-import { Activity, Layers } from 'lucide-react';
+import { Activity, FileStack, Layers } from 'lucide-react';
 import React, { useState } from 'react';
 import { AgentActivityPanel } from './AgentActivityPanel';
+import { FileOutputPanel } from './FileOutputPanel';
 import { TaskDecompositionPanel } from './TaskDecompositionPanel';
 
-type Tab = 'task-map' | 'agent-activity';
+type Tab = 'task-map' | 'agent-activity' | 'files-output';
 
 const TABS: { id: Tab; label: string; icon: typeof Layers }[] = [
   { id: 'task-map', label: 'Task Map', icon: Layers },
   { id: 'agent-activity', label: 'Agents', icon: Activity },
+  { id: 'files-output', label: 'Files', icon: FileStack },
 ];
 
 export const MonitoringPanel: React.FC = () => {
@@ -39,9 +41,10 @@ export const MonitoringPanel: React.FC = () => {
       <div className="flex-1 overflow-hidden min-h-0">
         {activeTab === 'task-map' ? (
           <TaskDecompositionPanel />
-        ) : (
+        ) : activeTab === 'agent-activity' ? (
           <AgentActivityPanel />
-        )}
+        ) :
+          <FileOutputPanel />}
       </div>
     </div>
   );

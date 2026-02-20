@@ -46,7 +46,7 @@ export type AgentStatus = z.infer<typeof AgentStatusSchema>;
 // ============================================
 // Display name mapping
 // ============================================
-const AGENT_DISPLAY_NAMES: Record<string, string> = {
+export const AGENT_DISPLAY_NAMES: Record<string, string> = {
   attending_physician: 'Attending Physician',
   chief_of_medicine: 'Chief of Medicine',
   clinical_pharmacologist: 'Clinical Pharmacologist',
@@ -54,6 +54,13 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   medical_scribe: 'Medical Scribe',
   radiologist: 'Radiologist',
 };
+
+// Agents that use MedGemma (secondary_agent config)
+export const MEDGEMMA_AGENTS: string[] = [
+  'attending_physician',
+  'clinical_pharmacologist',
+  'radiologist',
+];
 
 // ============================================
 // Main Agents List

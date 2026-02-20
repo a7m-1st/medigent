@@ -1,5 +1,3 @@
-
-
 import json
 import logging
 import os
@@ -45,6 +43,10 @@ class AgentConfig(BaseModel):
     model_platform: str | None = None
     api_key: str | None = None
     use_simulated_tool_calling: bool = False
+    # Maximum context window size in tokens for this agent's model.
+    # Used as token_limit for CAMEL's auto-compaction (context summarization).
+    # If None, CAMEL uses the model backend's default token limit.
+    model_context_size: int | None = None
     
     def get_effective_config(self, fallback: "AgentConfig") -> "AgentConfig":
         """Returns a new AgentConfig with fallbacks applied."""
@@ -54,6 +56,7 @@ class AgentConfig(BaseModel):
             model_platform=self.model_platform or fallback.model_platform,
             api_key=self.api_key or fallback.api_key,
             use_simulated_tool_calling=self.use_simulated_tool_calling or fallback.use_simulated_tool_calling,
+            model_context_size=self.model_context_size or fallback.model_context_size,
         )
     
     def has_custom_config(self) -> bool:
@@ -120,11 +123,13 @@ class Chat(BaseModel):
             
             # Set default secondary_agent (MedGemma) configuration if not provided
             if not data.get("secondary_agent"):
+                medgemma_ctx = os.getenv("MEDGEMMA_CONTEXT_SIZE", "16384")
                 data["secondary_agent"] = {
                     "api_url": os.getenv("MEDGEMMA_API_URL", "https://med.awelkaircodes.org/v1"),
                     "model_platform": os.getenv("MEDGEMMA_MODEL_PLATFORM", "openai-compatible-model"),
                     "model_type": os.getenv("MEDGEMMA_MODEL_TYPE", "medgemma-4b"),
-                    "use_simulated_tool_calling": True
+                    "use_simulated_tool_calling": True,
+                    "model_context_size": int(medgemma_ctx) if medgemma_ctx else None,
                 }
         return data
 
@@ -202,6 +207,9 @@ class AgentModelConfig(BaseModel):
     api_key: str | None = None
     api_url: str | None = None
     extra_params: dict | None = None
+    # Context window size in tokens, passed from AgentConfig (secondary agents).
+    # Used as token_limit for CAMEL's auto-compaction.
+    model_context_size: int | None = None
 
     def has_custom_config(self) -> bool:
         """Check if any custom model configuration is set."""

@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import { ModernMessageInput } from './ModernMessageInput';
 import { useChat } from '@/hooks/useChat';
 import { useChatStore } from '@/stores/chatStore';
-import { Bot, User, Sparkles, Info } from 'lucide-react';
+import { Bot, User, Sparkles, Info, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -50,6 +50,7 @@ export const ModernChatWindow: React.FC = () => {
   const setWasStopped = useChatStore((state) => state.setWasStopped);
   const waitingForHumanReply = useChatStore((state) => state.waitingForHumanReply);
   const currentAskAgent = useChatStore((state) => state.currentAskAgent);
+  const currentAskAgentDisplayName = useChatStore((state) => state.currentAskAgentDisplayName);
   const setWaitingForHumanReply = useChatStore((state) => state.setWaitingForHumanReply);
 
   const handleSendMessage = async (text: string, images: string[]) => {
@@ -138,6 +139,7 @@ export const ModernChatWindow: React.FC = () => {
           isLoading={isProcessing}
           waitingForHumanReply={waitingForHumanReply}
           currentAskAgent={currentAskAgent}
+          currentAskAgentDisplayName={currentAskAgentDisplayName}
         />
       </div>
     </div>
@@ -201,14 +203,28 @@ const MessageItem: React.FC<{ message: LocalMessage; isStreaming?: boolean }> = 
 
         {message.images && message.images.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-1">
-            {message.images.map((img, i) => (
-              <img 
-                key={i} 
-                src={img} 
-                alt="attachment" 
-                className="w-32 h-32 object-cover rounded-xl border border-white/5 shadow-lg" 
-              />
-            ))}
+            {message.images.map((img, i) => {
+              const isPdf = img.startsWith('data:application/pdf');
+              if (isPdf) {
+                return (
+                  <div 
+                    key={i}
+                    className="w-32 h-32 flex flex-col items-center justify-center rounded-xl border border-white/5 shadow-lg bg-red-50"
+                  >
+                    <FileText className="w-10 h-10 text-red-500" />
+                    <span className="text-xs text-red-600 font-medium mt-1">PDF</span>
+                  </div>
+                );
+              }
+              return (
+                <img 
+                  key={i} 
+                  src={img} 
+                  alt="attachment" 
+                  className="w-32 h-32 object-cover rounded-xl border border-white/5 shadow-lg" 
+                />
+              );
+            })}
           </div>
         )}
 

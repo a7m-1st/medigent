@@ -469,7 +469,7 @@ class ListenChatAgent(ChatAgent):
         self,
         response: ChatAgentResponse,
         original_input: BaseMessage | str,
-        max_iterations: int = 5,
+        max_iterations: int = 8,
     ) -> ChatAgentResponse:
         r"""Handle simulated tool calls for models without native tool support.
 
@@ -561,16 +561,12 @@ class ListenChatAgent(ChatAgent):
             # has the tool output.
             tool_results_text = "\n".join(tool_results)
             follow_up_message = (
-                f"The tools you called returned these results:\n"
+                f"Tool results:\n"
                 f"{tool_results_text}\n\n"
-                f"Based on these results, now return your FINAL answer as a "
-                f"JSON object with exactly two fields:\n"
-                f'- "content" (string): your complete result\n'
-                f'- "failed" (boolean): true only if the task could not be '
-                f"completed\n\n"
-                f"Example: "
-                f'{"{"}"content": "Task completed.", "failed": false{"}"}\n\n'
-                f"CRITICAL: Your entire response must be ONLY the JSON object."
+                f"You may call another tool if needed, or return your FINAL answer.\n"
+                f"To call another tool, respond with ONLY a <tool_call> block.\n"
+                f"To finish, respond with ONLY a JSON object:\n"
+                f'{{"content": "your complete result", "failed": false}}'
             )
 
             # Get the next response from the model
@@ -706,7 +702,7 @@ class ListenChatAgent(ChatAgent):
         self,
         response: ChatAgentResponse,
         original_input: BaseMessage | str,
-        max_iterations: int = 5,
+        max_iterations: int = 8,
     ) -> ChatAgentResponse:
         r"""Async version of _handle_simulated_tool_calls.
 
@@ -804,17 +800,12 @@ class ListenChatAgent(ChatAgent):
             # describe the results in plain prose.
             tool_results_text = "\n".join(tool_results)
             follow_up_message = (
-                f"The tools you called returned these results:\n"
+                f"Tool results:\n"
                 f"{tool_results_text}\n\n"
-                f"Based on these results, now return your FINAL answer as a "
-                f"JSON object with exactly two fields:\n"
-                f'- "content" (string): your complete result\n'
-                f'- "failed" (boolean): true only if the task could not be '
-                f"completed\n\n"
-                f"Example: "
-                f'{"{"}"content": "The image shows a chest X-ray with normal '
-                f'lung fields.", "failed": false{"}"}\n\n'
-                f"CRITICAL: Your entire response must be ONLY the JSON object."
+                f"You may call another tool if needed, or return your FINAL answer.\n"
+                f"To call another tool, respond with ONLY a <tool_call> block.\n"
+                f"To finish, respond with ONLY a JSON object:\n"
+                f'{{"content": "your complete result", "failed": false}}'
             )
 
             # Get the next response from the model
@@ -1128,6 +1119,7 @@ class ListenChatAgent(ChatAgent):
             token_limit=getattr(
                 self.memory.get_context_creator(), "token_limit", None
             ),
+            summarize_threshold=self.summarize_threshold,
             output_language=self._output_language,
             tools=cloned_tools,
             toolkits_to_register_agent=toolkits_to_register,

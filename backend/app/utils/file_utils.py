@@ -39,36 +39,54 @@ def is_base64_image(data: str) -> bool:
     return data.startswith("data:image/")
 
 
-def save_base64_image(
+def is_base64_file(data: str) -> bool:
+    """Check if a string is a base64 encoded file data URL (image or PDF)."""
+    return data.startswith("data:image/") or data.startswith(
+        "data:application/pdf"
+    )
+
+
+def save_base64_file(
     base64_data: str,
     save_dir: str,
     filename_prefix: str = "upload",
 ) -> str:
     """
-    Save a base64 encoded image to a file.
+    Save a base64 encoded file (image or PDF) to disk.
 
     Args:
-        base64_data: Base64 data URL (e.g., "data:image/png;base64,iVBORw0...")
-        save_dir: Directory to save the image
+        base64_data: Base64 data URL (e.g., "data:image/png;base64,iVBORw0..." or "data:application/pdf;base64,...")
+        save_dir: Directory to save the file
         filename_prefix: Prefix for the generated filename
 
     Returns:
-        Absolute path to the saved image file
+        Absolute path to the saved file
 
     Raises:
-        ValueError: If the data is not a valid base64 image
+        ValueError: If the data is not a valid base64 file
     """
-    # Parse the data URL
+    # Try to match image first
     match = re.match(r"data:image/(\w+);base64,(.+)", base64_data)
+    file_type = "image"
+
     if not match:
-        raise ValueError("Invalid base64 image data URL")
+        # Try to match PDF
+        match = re.match(r"data:application/pdf;base64,(.+)", base64_data)
+        file_type = "pdf"
 
-    image_format = match.group(1).lower()
-    image_data = match.group(2)
+    if not match:
+        raise ValueError("Invalid base64 file data URL")
 
-    # Normalize format extension
-    ext_map = {"jpeg": "jpg", "png": "png", "gif": "gif", "webp": "webp"}
-    ext = ext_map.get(image_format, image_format)
+    if file_type == "image":
+        file_format = match.group(1).lower()
+        file_data = match.group(2)
+        # Normalize format extension
+        ext_map = {"jpeg": "jpg", "png": "png", "gif": "gif", "webp": "webp"}
+        ext = ext_map.get(file_format, file_format)
+    else:
+        # PDF
+        file_data = match.group(1)
+        ext = "pdf"
 
     # Generate unique filename
     unique_id = uuid.uuid4().hex[:8]
@@ -81,15 +99,15 @@ def save_base64_image(
     # Decode and save
     file_path = save_path / filename
     try:
-        decoded_data = base64.b64decode(image_data)
+        decoded_data = base64.b64decode(file_data)
         with open(file_path, "wb") as f:
             f.write(decoded_data)
 
-        logger.info(f"Saved image: {file_path} ({len(decoded_data)} bytes)")
+        logger.info(f"Saved file: {file_path} ({len(decoded_data)} bytes)")
         return str(file_path.absolute())
     except Exception as e:
-        logger.error(f"Failed to save image: {e}")
-        raise ValueError(f"Failed to decode and save image: {e}")
+        logger.error(f"Failed to save file: {e}")
+        raise ValueError(f"Failed to decode and save file: {e}")
 
 
 def process_attaches(
@@ -97,27 +115,27 @@ def process_attaches(
     save_dir: str,
 ) -> list[str]:
     """
-    Process a list of attachments, converting base64 images to file paths.
+    Process a list of attachments, converting base64 files to file paths.
 
     Args:
         attaches: List of file paths or base64 data URLs
-        save_dir: Directory to save converted images
+        save_dir: Directory to save converted files
 
     Returns:
-        List of file paths (base64 images are saved and converted to paths)
+        List of file paths (base64 files are saved and converted to paths)
     """
     processed = []
     for i, attach in enumerate(attaches):
-        if is_base64_image(attach):
+        if is_base64_file(attach):
             try:
-                file_path = save_base64_image(
+                file_path = save_base64_file(
                     attach,
                     save_dir,
-                    filename_prefix=f"image_{i+1}",
+                    filename_prefix=f"file_{i + 1}",
                 )
                 processed.append(file_path)
             except ValueError as e:
-                logger.warning(f"Skipping invalid base64 image: {e}")
+                logger.warning(f"Skipping invalid base64 file: {e}")
         else:
             # Already a file path, use as-is
             processed.append(attach)

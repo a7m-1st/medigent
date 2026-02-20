@@ -287,9 +287,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 )
                 # Update the sync_step with new task_id
                 if hasattr(item, "new_task_id") and item.new_task_id:
-                    set_current_task_id(
-                        options.project_id, item.new_task_id
-                    )
+                    set_current_task_id(options.project_id, item.new_task_id)
                     task_lock.summary_generated = False
 
                 yield sse_json("confirmed", {"question": question})
@@ -506,9 +504,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         payload = {
                             "project_id": options.project_id,
                             "task_id": options.task_id,
-                            "sub_tasks": tree_sub_tasks(
-                                camel_task.subtasks
-                            ),
+                            "sub_tasks": tree_sub_tasks(camel_task.subtasks),
                             "delta_sub_tasks": tree_sub_tasks(sub_tasks),
                             "is_final": True,
                             "summary_task": summary_task_content,
@@ -571,14 +567,20 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         error_msg = str(e)
                         logger.error(
                             f"[WORKFORCE] Error during task execution: {error_msg}",
-                            extra={"project_id": options.project_id, "task_id": options.task_id},
+                            extra={
+                                "project_id": options.project_id,
+                                "task_id": options.task_id,
+                            },
                             exc_info=True,
                         )
                         # Put error action in queue so main loop can yield it
                         await task_lock.put_queue(
                             ActionErrorData(
                                 action=Action.error,
-                                data={"message": error_msg, "type": "workforce_error"},
+                                data={
+                                    "message": error_msg,
+                                    "type": "workforce_error",
+                                },
                             )
                         )
 
@@ -637,7 +639,10 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 error_type = item.data.get("type", "workforce_error")
                 logger.error(
                     f"[SSE] Sending error event: {error_message}",
-                    extra={"project_id": options.project_id, "task_id": options.task_id},
+                    extra={
+                        "project_id": options.project_id,
+                        "task_id": options.task_id,
+                    },
                 )
                 yield sse_json(
                     "error",

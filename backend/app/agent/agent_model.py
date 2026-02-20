@@ -1,5 +1,4 @@
 
-
 import json
 import logging
 import uuid
@@ -123,6 +122,22 @@ def agent_model(
             )
             model_platform_enum = None
 
+    logger.info(
+        f"Creating model with platform={effective_config['model_platform']}, "
+        f"type={effective_config['model_type']}, url={effective_config['api_url']}"
+    )
+
+    # Resolve context size from custom_model_config (secondary agents only)
+    resolved_context_size = None
+    if custom_model_config and custom_model_config.model_context_size:
+        resolved_context_size = custom_model_config.model_context_size
+
+    if resolved_context_size:
+        logger.info(
+            f"Agent {agent_name} using token_limit={resolved_context_size} "
+            f"(auto-compaction enabled at ~90% usage)"
+        )
+
     model = ModelFactory.create(
         model_platform=effective_config["model_platform"].lower(),
         model_type=effective_config["model_type"],
@@ -186,6 +201,8 @@ After calling a tool, you will receive the result and should continue the conver
             model=model,
             tools=tools,  # Pass tools for local execution
             agent_id=agent_id,
+            token_limit=resolved_context_size or None,
+            summarize_threshold=90,  # Trigger summarization at 90% of token_limit (~14.7k for 16384 context)
             prune_tool_calls_from_memory=prune_tool_calls_from_memory,
             toolkits_to_register_agent=toolkits_to_register_agent,
             enable_snapshot_clean=enable_snapshot_clean,
@@ -200,6 +217,8 @@ After calling a tool, you will receive the result and should continue the conver
         model=model,
         tools=tools,
         agent_id=agent_id,
+        token_limit=resolved_context_size or None,
+        summarize_threshold=90,  # Trigger summarization at 90% of token_limit
         prune_tool_calls_from_memory=prune_tool_calls_from_memory,
         toolkits_to_register_agent=toolkits_to_register_agent,
         enable_snapshot_clean=enable_snapshot_clean,

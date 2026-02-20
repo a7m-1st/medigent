@@ -1,15 +1,16 @@
-
-
 import asyncio
 import logging
 import os
 import re
 import time
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from app.component.environment import sanitize_env_path, set_user_env_path
 from app.model.chat import (
     Chat,
@@ -40,6 +41,25 @@ chat_logger = logging.getLogger("chat_controller")
 
 # SSE timeout configuration (60 minutes in seconds)
 SSE_TIMEOUT_SECONDS = 60 * 60
+
+# Cache configuration for project files
+FILES_CACHE: dict[str, dict[str, Any]] = {}
+FILES_CACHE_TTL_SECONDS = 30  # Cache TTL: 30 seconds
+
+
+class ProjectFile(BaseModel):
+    name: str
+    path: str
+    size: int
+    created_at: str
+    is_directory: bool
+
+
+class ProjectFilesResponse(BaseModel):
+    project_id: str
+    task_id: str | None
+    files: list[ProjectFile]
+    total_count: int
 
 
 async def _cleanup_task_lock_safe(task_lock, reason: str) -> bool:
@@ -142,6 +162,53 @@ async def timeout_stream_wrapper(
         if not cleanup_triggered:
             await _cleanup_task_lock_safe(task_lock, "ERROR")
         raise
+
+
+def scan_folder(folder_path: Path, files: list, base_path: Path):
+    """Recursively scan folder and add files to list."""
+    # Exclude camel_logs directory
+    excluded_dirs = {"camel_logs", "__pycache__", ".git"}
+
+    try:
+        for item in folder_path.iterdir():
+            if item.name in excluded_dirs:
+                continue
+
+            if item.is_file():
+                stat = item.stat()
+                relative_path = item.relative_to(base_path)
+                files.append(
+                    ProjectFile(
+                        name=item.name,
+                        path=str(relative_path),
+                        size=stat.st_size,
+                        created_at=datetime.fromtimestamp(
+                            stat.st_ctime
+                        ).isoformat(),
+                        is_directory=False,
+                    )
+                )
+            elif item.is_dir():
+                # Optionally include subdirectories
+                stat = item.stat()
+                relative_path = item.relative_to(base_path)
+                files.append(
+                    ProjectFile(
+                        name=item.name,
+                        path=str(relative_path),
+                        size=0,
+                        created_at=datetime.fromtimestamp(
+                            stat.st_ctime
+                        ).isoformat(),
+                        is_directory=True,
+                    )
+                )
+                # Recursively scan subdirectories
+                scan_folder(item, files, base_path)
+    except PermissionError:
+        chat_logger.warning(f"Permission denied: {folder_path}")
+    except Exception as e:
+        chat_logger.error(f"Error scanning folder {folder_path}: {e}")
 
 
 @router.post("/chat", name="start chat")
@@ -270,6 +337,7 @@ def improve(id: str, data: SupplementChat):
     )
     return Response(status_code=201)
 
+
 @router.delete("/chat/{id}", name="stop chat")
 def stop(id: str):
     """Stop the task by task_id or project_id"""
@@ -279,14 +347,14 @@ def stop(id: str):
     )
     chat_logger.info(f"[STOP-BUTTON] id (task_id or project_id): {id}")
     chat_logger.info("=" * 80)
-    
+
     # Try to find task lock by task_id first, then by project_id
     task_lock = get_task_lock_by_task_id(id)
-    
+
     if task_lock is None:
         # Fall back to looking up by project_id
         task_lock = get_task_lock_if_exists(id)
-    
+
     if task_lock is None:
         chat_logger.warning(
             "[STOP-BUTTON] Task lock not found"
@@ -294,18 +362,16 @@ def stop(id: str):
             f" id: {id}"
         )
         return Response(status_code=204)
-    
+
     chat_logger.info(
         "[STOP-BUTTON] Task lock retrieved,"
         f" task_lock.id: {task_lock.id},"
         f" current_task_id: {task_lock.current_task_id}"
     )
     chat_logger.info(
-        "[STOP-BUTTON] Queueing"
-        " ActionStopData(Action.stop)"
-        " to task_lock queue"
+        "[STOP-BUTTON] Queueing ActionStopData(Action.stop) to task_lock queue"
     )
-    
+
     try:
         asyncio.run(task_lock.put_queue(ActionStopData(action=Action.stop)))
         chat_logger.info(
@@ -315,10 +381,9 @@ def stop(id: str):
         )
     except Exception as e:
         chat_logger.error(
-            "[STOP-BUTTON] Failed to queue stop action,"
-            f" error: {str(e)}"
+            f"[STOP-BUTTON] Failed to queue stop action, error: {str(e)}"
         )
-    
+
     return Response(status_code=204)
 
 
@@ -333,3 +398,212 @@ def human_reply(id: str, data: HumanReply):
     chat_logger.debug("Human reply processed", extra={"task_id": id})
     return Response(status_code=201)
 
+
+@router.get("/projects/{project_id}/files", name="list project files")
+def list_project_files(project_id: str, task_id: str | None = None):
+    """List all files in a project's folder.
+
+    Args:
+        project_id: The project ID
+        task_id: Optional task ID to filter to specific task folder
+
+    Returns:
+        List of files with name, path, size, and creation time
+    """
+    # Check cache first
+    cache_key = f"{project_id}:{task_id}"
+    cached = FILES_CACHE.get(cache_key)
+    if cached and time.time() - cached["timestamp"] < FILES_CACHE_TTL_SECONDS:
+        chat_logger.debug(
+            "Returning cached project files",
+            extra={"project_id": project_id, "task_id": task_id},
+        )
+        return ProjectFilesResponse(**cached["data"])
+
+    base_path = Path.home() / "medgemma" / f"project_{project_id}"
+
+    if not base_path.exists():
+        chat_logger.warning(
+            "Project folder not found",
+            extra={"project_id": project_id, "path": str(base_path)},
+        )
+        return ProjectFilesResponse(
+            project_id=project_id,
+            task_id=task_id,
+            files=[],
+            total_count=0,
+        )
+
+    files = []
+
+    if task_id:
+        # List files in specific task folder
+        task_path = base_path / f"task_{task_id}"
+        if task_path.exists():
+            scan_folder(task_path, files, base_path)
+    else:
+        # List all files in project folder (including all tasks)
+        for item in base_path.iterdir():
+            if item.is_dir() and item.name.startswith("task_"):
+                scan_folder(item, files, base_path)
+
+    # Sort by creation time (newest first)
+    files.sort(key=lambda x: x.created_at, reverse=True)
+
+    chat_logger.info(
+        "Listed project files",
+        extra={
+            "project_id": project_id,
+            "task_id": task_id,
+            "file_count": len(files),
+        },
+    )
+
+    response = ProjectFilesResponse(
+        project_id=project_id,
+        task_id=task_id,
+        files=files,
+        total_count=len(files),
+    )
+
+    # Store in cache
+    FILES_CACHE[cache_key] = {
+        "timestamp": time.time(),
+        "data": response.model_dump(),
+    }
+
+    return response
+
+
+@router.get(
+    "/projects/{project_id}/files/{file_path:path}", name="get project file"
+)
+def get_project_file(project_id: str, file_path: str):
+    """Get/download a specific file from a project folder.
+
+    Args:
+        project_id: The project ID
+        file_path: Relative path to the file (URL encoded)
+
+    Returns:
+        The file content with appropriate content-type
+    """
+    base_path = Path.home() / "medgemma" / f"project_{project_id}"
+    full_path = base_path / file_path
+
+    # Security check - ensure path is within project folder
+    try:
+        full_path = full_path.resolve()
+        base_path = base_path.resolve()
+        if not str(full_path).startswith(str(base_path)):
+            chat_logger.warning(
+                "Path traversal attempt detected",
+                extra={"project_id": project_id, "file_path": file_path},
+            )
+            return Response(status_code=403, content="Access denied")
+    except Exception:
+        return Response(status_code=400, content="Invalid path")
+
+    if not full_path.exists():
+        chat_logger.warning(
+            "File not found",
+            extra={
+                "project_id": project_id,
+                "file_path": file_path,
+                "path": str(full_path),
+            },
+        )
+        return Response(status_code=404, content="File not found")
+
+    if not full_path.is_file():
+        return Response(status_code=400, content="Not a file")
+
+    # Determine content type
+    content_type = "application/octet-stream"
+    suffix = full_path.suffix.lower()
+    mime_types = {
+        ".html": "text/html",
+        ".htm": "text/html",
+        ".txt": "text/plain",
+        ".json": "application/json",
+        ".pdf": "application/pdf",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".svg": "image/svg+xml",
+        ".md": "text/markdown",
+        ".py": "text/x-python",
+        ".js": "text/javascript",
+        ".css": "text/css",
+    }
+    content_type = mime_types.get(suffix, "application/octet-stream")
+
+    chat_logger.info(
+        "Serving project file",
+        extra={"project_id": project_id, "file_path": file_path},
+    )
+
+    return Response(
+        content=full_path.read_bytes(),
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{full_path.name}"'
+        },
+    )
+
+
+@router.delete(
+    "/projects/{project_id}/files/{file_path:path}", name="delete project file"
+)
+def delete_project_file(project_id: str, file_path: str):
+    """Delete a specific file from a project folder.
+
+    Args:
+        project_id: The project ID
+        file_path: Relative path to the file (URL encoded)
+
+    Returns:
+        Success message
+    """
+    base_path = Path.home() / "medgemma" / f"project_{project_id}"
+    full_path = base_path / file_path
+
+    # Security check - ensure path is within project folder
+    try:
+        full_path = full_path.resolve()
+        base_path = base_path.resolve()
+        if not str(full_path).startswith(str(base_path)):
+            chat_logger.warning(
+                "Path traversal attempt detected",
+                extra={"project_id": project_id, "file_path": file_path},
+            )
+            return Response(status_code=403, content="Access denied")
+    except Exception:
+        return Response(status_code=400, content="Invalid path")
+
+    if not full_path.exists():
+        chat_logger.warning(
+            "File not found for deletion",
+            extra={"project_id": project_id, "file_path": file_path},
+        )
+        return Response(status_code=404, content="File not found")
+
+    if not full_path.is_file():
+        return Response(status_code=400, content="Not a file")
+
+    try:
+        full_path.unlink()
+        chat_logger.info(
+            "Deleted project file",
+            extra={"project_id": project_id, "file_path": file_path},
+        )
+        return {"message": "File deleted successfully", "file_path": file_path}
+    except Exception as e:
+        chat_logger.error(
+            f"Failed to delete file: {e}",
+            extra={"project_id": project_id, "file_path": file_path},
+        )
+        return Response(
+            status_code=500, content=f"Failed to delete file: {str(e)}"
+        )

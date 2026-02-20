@@ -50,9 +50,9 @@
   --color-sidebar-active: var(--sidebar-active);
 
   /* Box shadows */
-  --shadow-glow-sm: 0 0 10px rgba(59, 130, 246, 0.15);
-  --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.2);
-  --shadow-glow-lg: 0 0 40px rgba(59, 130, 246, 0.25);
+  --shadow-glow-sm: 0 0 10px rgba(220, 20, 60, 0.15);
+  --shadow-glow: 0 0 20px rgba(220, 20, 60, 0.2);
+  --shadow-glow-lg: 0 0 40px rgba(220, 20, 60, 0.25);
   --shadow-glow-success: 0 0 15px rgba(34, 197, 94, 0.3);
   --shadow-glow-error: 0 0 15px rgba(239, 68, 68, 0.3);
 
@@ -91,12 +91,12 @@
   /* Border colors */
   --border-color: #e5e5e5;
   --border-color-hover: #d4d4d4;
-  --border-color-focus: #3b82f6;
+  --border-color-focus: #DC143C;
 
   /* Accent colors */
-  --accent-color: #3b82f6;
-  --accent-color-hover: #2563eb;
-  --accent-color-light: #eff6ff;
+  --accent-color: #DC143C;
+  --accent-color-hover: #B90C2C;
+  --accent-color-light: #FCE7F3;
   --accent-fg: #ffffff;
 
   /* Status colors */
@@ -106,13 +106,13 @@
   --warning-color-light: #fefce8;
   --error-color: #ef4444;
   --error-color-light: #fef2f2;
-  --info-color: #3b82f6;
-  --info-color-light: #eff6ff;
+  --info-color: #DC143C;
+  --info-color-light: #FCE7F3;
 
   /* User message */
-  --user-bg: #eff6ff;
-  --user-border: #bfdbfe;
-  --user-fg: #1e40af;
+  --user-bg: #FCE7F3;
+  --user-border: #F9A8D4;
+  --user-fg: #9D174D;
 
   /* AI message */
   --ai-bg: #ffffff;
@@ -126,7 +126,7 @@
   --sidebar-bg: #fafafa;
   --sidebar-border-color: #e5e5e5;
   --sidebar-hover: #f1f1f1;
-  --sidebar-active: #eff6ff;
+  --sidebar-active: #FCE7F3;
 
   /* Scrollbar */
   --scrollbar-track: transparent;
@@ -156,12 +156,12 @@
   /* Border colors */
   --border-color: #27272a;
   --border-color-hover: #3f3f46;
-  --border-color-focus: #3b82f6;
+  --border-color-focus: #DC143C;
 
   /* Accent colors */
-  --accent-color: #3b82f6;
-  --accent-color-hover: #60a5fa;
-  --accent-color-light: #1e3a8a;
+  --accent-color: #DC143C;
+  --accent-color-hover: #F87171;
+  --accent-color-light: #7F1D1D;
   --accent-fg: #ffffff;
 
   /* Status colors */
@@ -171,12 +171,12 @@
   --warning-color-light: #713f12;
   --error-color: #ef4444;
   --error-color-light: #7f1d1d;
-  --info-color: #3b82f6;
-  --info-color-light: #1e3a8a;
+  --info-color: #DC143C;
+  --info-color-light: #7F1D1D;
 
   /* User message */
-  --user-bg: #27272a;
-  --user-border: #3f3f46;
+  --user-bg: #7F1D1D;
+  --user-border: #9F1239;
   --user-fg: #fafafa;
 
   /* AI message */
@@ -191,7 +191,7 @@
   --sidebar-bg: #000000;
   --sidebar-border-color: #27272a;
   --sidebar-hover: #18181b;
-  --sidebar-active: #1e3a8a;
+  --sidebar-active: #7F1D1D;
 
   /* Scrollbar */
   --scrollbar-track: transparent;
@@ -354,4 +354,95 @@ body {
   .shadow-glow-lg { box-shadow: var(--shadow-glow-lg); }
   .shadow-glow-success { box-shadow: var(--shadow-glow-success); }
   .shadow-glow-error { box-shadow: var(--shadow-glow-error); }
+}
+
+/* Markdown content styles */
+.markdown-content {
+  line-height: 1.6;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+}
+
+.markdown-content h1 { font-size: 1.5em; }
+.markdown-content h2 { font-size: 1.3em; }
+.markdown-content h3 { font-size: 1.15em; }
+
+.markdown-content p {
+  margin-bottom: 1em;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  padding-left: 1.5em;
+  margin-bottom: 1em;
+}
+
+.markdown-content li {
+  margin-bottom: 0.25em;
+}
+
+.markdown-content code {
+  background-color: var(--bg-tertiary);
+  padding: 0.125em 0.375em;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  font-size: 0.9em;
+}
+
+.markdown-content pre {
+  background-color: var(--bg-tertiary);
+  padding: 1em;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin-bottom: 1em;
+}
+
+.markdown-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.markdown-content blockquote {
+  border-left: 3px solid var(--accent-color);
+  padding-left: 1em;
+  margin-left: 0;
+  color: var(--fg-muted);
+  margin-bottom: 1em;
+}
+
+.markdown-content a {
+  color: var(--accent-color);
+  text-decoration: underline;
+}
+
+.markdown-content hr {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 1.5em 0;
+}
+
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1em;
+}
+
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid var(--border-color);
+  padding: 0.5em;
+  text-align: left;
+}
+
+.markdown-content th {
+  background-color: var(--bg-secondary);
 }

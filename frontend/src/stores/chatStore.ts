@@ -18,6 +18,7 @@ interface ChatState {
   wasStopped: boolean
   waitingForHumanReply: boolean
   currentAskAgent: string | null
+  currentAskAgentDisplayName: string | null
 
   // Actions
   addMessage: (message: ChatMessage) => void
@@ -32,7 +33,7 @@ interface ChatState {
   clearError: () => void
   setSSEConnected: (isConnected: boolean) => void
   setWasStopped: (wasStopped: boolean) => void
-  setWaitingForHumanReply: (waiting: boolean, agent?: string | null) => void
+  setWaitingForHumanReply: (waiting: boolean, agent: string | null, displayName?: string | null) => void
   clearMessages: () => void
   reset: () => void
 }
@@ -50,6 +51,7 @@ const initialState = {
   wasStopped: false,
   waitingForHumanReply: false,
   currentAskAgent: null as string | null,
+  currentAskAgentDisplayName: null as string | null,
 }
 
 export const useChatStore = create<ChatState>()(
@@ -124,10 +126,11 @@ export const useChatStore = create<ChatState>()(
         state.wasStopped = wasStopped
       }),
 
-    setWaitingForHumanReply: (waiting, agent = null) =>
+    setWaitingForHumanReply: (waiting, agent = null, displayName = null) =>
       set((state) => {
         state.waitingForHumanReply = waiting
         state.currentAskAgent = agent
+        state.currentAskAgentDisplayName = displayName
       }),
 
     clearMessages: () =>

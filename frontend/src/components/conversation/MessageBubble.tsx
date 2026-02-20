@@ -59,7 +59,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
             isUser ? 'text-foreground-muted' : 'text-teal-500 dark:text-teal-400'
           )}
         >
-          {isUser ? 'You' : 'MedGemma'}
+          {isUser ? 'You' : 'Health Unit Coordinator'}
         </span>
 
         {/* Message bubble */}

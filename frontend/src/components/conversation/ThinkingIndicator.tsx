@@ -42,7 +42,7 @@ export const ThinkingIndicator: React.FC = () => {
 
       <div className="flex flex-col gap-1.5">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-teal-500 dark:text-teal-400 px-0.5">
-          MedGemma
+          Health Unit Coordinator
         </span>
 
         <div className="bg-ai-bubble border border-ai-bubble-border rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">

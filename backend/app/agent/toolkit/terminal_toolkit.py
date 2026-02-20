@@ -1,5 +1,3 @@
-
-
 import asyncio
 import logging
 import os
@@ -31,6 +29,29 @@ logger = logging.getLogger("terminal_toolkit")
 # TODO: Consider getting this from a shared config
 APP_VERSION = "0.0.82"
 
+# Rate limiting defaults
+DEFAULT_MAX_COMMANDS_PER_SESSION = 50
+DEFAULT_MAX_COMMAND_TIMEOUT = 60  # seconds
+
+# Blocked commands (dangerous commands that should not be executed)
+BLOCKED_COMMANDS = [
+    "rm -rf /",
+    "rm -rf /*",
+    "mkfs",
+    "dd if=",
+    ":(){:|:&};:",  # Fork bomb
+    "chmod 777 /",
+    "chown -R",
+    "wget | sh",
+    "curl | sh",
+    "shutdown",
+    "reboot",
+    "init 0",
+    "init 6",
+    "halt",
+    "poweroff",
+]
+
 
 def get_terminal_base_venv_path() -> str:
     """Get the path to the terminal base venv created during app installation."""
@@ -48,6 +69,9 @@ class TerminalToolkit(BaseTerminalToolkit, AbstractToolkit):
     _thread_pool: ThreadPoolExecutor | None = None
     _thread_local = threading.local()
 
+    # Class-level tracking for command limits per task session
+    _command_counts: dict[str, int] = {}
+
     def __init__(
         self,
         api_task_id: str,
@@ -60,10 +84,20 @@ class TerminalToolkit(BaseTerminalToolkit, AbstractToolkit):
         safe_mode: bool = True,
         allowed_commands: list[str] | None = None,
         clone_current_env: bool = True,
+        max_commands: int = DEFAULT_MAX_COMMANDS_PER_SESSION,
+        max_timeout: float = DEFAULT_MAX_COMMAND_TIMEOUT,
     ):
         self.api_task_id = api_task_id
         if agent_name is not None:
             self.agent_name = agent_name
+
+        # Rate limiting configuration
+        self.max_commands = max_commands
+        self.max_timeout = max_timeout
+
+        # Initialize command count for this task if not exists
+        if api_task_id not in TerminalToolkit._command_counts:
+            TerminalToolkit._command_counts[api_task_id] = 0
 
         # Get base directory from environment
         base_dir = env(
@@ -396,6 +430,50 @@ class TerminalToolkit(BaseTerminalToolkit, AbstractToolkit):
         Returns:
             str: The output of the command execution.
         """
+        # Check command limit
+        current_count = TerminalToolkit._command_counts.get(
+            self.api_task_id, 0
+        )
+        if current_count >= self.max_commands:
+            logger.warning(
+                f"Command limit reached for task {self.api_task_id}: "
+                f"{current_count}/{self.max_commands}"
+            )
+            return (
+                f"Error: Command limit reached ({self.max_commands} commands per session). "
+                f"No more commands can be executed."
+            )
+
+        # Check for blocked commands
+        command_lower = command.lower().strip()
+        for blocked in BLOCKED_COMMANDS:
+            if blocked in command_lower:
+                logger.warning(
+                    f"Blocked dangerous command for task {self.api_task_id}: "
+                    f"{command[:50]}..."
+                )
+                return (
+                    f"Error: Command '{blocked}' is blocked for security reasons. "
+                    f"This command cannot be executed."
+                )
+
+        # Enforce max timeout
+        if timeout > self.max_timeout:
+            timeout = self.max_timeout
+            logger.debug(
+                f"Timeout reduced to {self.max_timeout}s for task {self.api_task_id}"
+            )
+
+        # Increment command count
+        TerminalToolkit._command_counts[self.api_task_id] = current_count + 1
+
+        logger.info(
+            f"Executing command ({current_count + 1}/{self.max_commands}): "
+            f"{command[:50]}...",
+            extra={"api_task_id": self.api_task_id},
+        )
+
+        # Auto-generate ID if not provided
         if id is None:
             import time
 

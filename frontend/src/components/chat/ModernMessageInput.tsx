@@ -12,6 +12,7 @@ interface ModernMessageInputProps {
   isLoading: boolean;
   waitingForHumanReply?: boolean;
   currentAskAgent?: string | null;
+  currentAskAgentDisplayName?: string | null;
 }
 
 export const ModernMessageInput: React.FC<ModernMessageInputProps> = ({ 
@@ -19,7 +20,8 @@ export const ModernMessageInput: React.FC<ModernMessageInputProps> = ({
   onSendHumanReply,
   isLoading,
   waitingForHumanReply = false,
-  currentAskAgent = null
+  currentAskAgent = null,
+  currentAskAgentDisplayName = null
 }) => {
   const [message, setMessage] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -88,7 +90,7 @@ export const ModernMessageInput: React.FC<ModernMessageInputProps> = ({
             >
               <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
               <span className="text-xs font-medium text-amber-500">
-                {currentAskAgent} is waiting for your reply
+                {currentAskAgentDisplayName || currentAskAgent} is waiting for your reply
               </span>
             </motion.div>
           )}

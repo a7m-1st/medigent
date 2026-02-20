@@ -6,6 +6,7 @@ import {
   useResourceStore,
   useTaskDecompStore,
 } from '@/stores';
+import { useApiConfigStore } from '@/stores/apiConfigStore';
 import type {
   Chat,
   ChatMessage,
@@ -254,6 +255,16 @@ export function useChat(): UseChatReturn {
       // Always start a new chat session via /chat
       console.log('[useChat] Starting new chat session via startChat');
       // Merge provided config with defaults
+      const { medgemmaHostUrl, medgemmaModelType, medgemmaContextSize } = useApiConfigStore.getState();
+      const secondaryAgent = medgemmaHostUrl
+        ? {
+            api_url: medgemmaHostUrl,
+            model_platform: 'openai-compatible-model',
+            model_type: medgemmaModelType || undefined,
+            use_simulated_tool_calling: true,
+            model_context_size: medgemmaContextSize ?? undefined,
+          }
+        : config?.secondary_agent;
       const chatData: Chat = {
         task_id: taskId || `task-${Date.now()}`,
         project_id: projectId || `project-${Date.now()}`,
@@ -274,7 +285,8 @@ export function useChat(): UseChatReturn {
         summary_prompt: config?.summary_prompt || '',
         extra_params: config?.extra_params ?? null,
         search_config: config?.search_config ?? null,
-        use_simulated_tool_calling: false //update this if using medgemma as main model
+        use_simulated_tool_calling: false,
+        secondary_agent: secondaryAgent ?? null,
       };
       await startChat(chatData);
     },
