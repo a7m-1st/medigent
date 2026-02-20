@@ -61,8 +61,39 @@ def _build_simulated_tool_call_prompt(
             '- "content" (string): your result\n'
             '- "failed" (boolean): true if you could not complete the task\n\n'
             "**CRITICAL**: Your entire response must be ONLY the JSON object.\n"
-            "Example: {\"content\": \"Task completed.\", \"failed\": false}\n"
+            'Example: {"content": "Task completed.", "failed": false}\n'
         )
+
+    tools_json = json.dumps(tool_descriptions, indent=2)
+
+    # Build a prompt that FRONT-LOADS the tool calling instructions
+    # so small models (like MedGemma 4B) see them early and follow them.
+    return (
+        f"""You have tools you MUST use to complete this task. Do NOT answer from memory.
+
+AVAILABLE TOOLS:
+{tools_json}
+
+HOW TO CALL A TOOL - use this EXACT format (no markdown, no backticks):
+<tool_call>
+{{"name": "tool_name", "arguments": {{"param1": "value1"}}}}
+</tool_call>
+
+RULES:
+1. Call ONE tool at a time. Your ENTIRE response must be ONLY the <tool_call> block.
+2. After receiving tool results, call the next tool OR return your final answer.
+3. You MUST call tools - do NOT skip them or make up results.
+4. When done with all tool calls, return a JSON object:
+   {{"content": "your complete result here", "failed": false}}
+
+---
+TASK:
+{base_task_prompt}
+---
+
+Begin by calling your first tool now. Your response must be ONLY a <tool_call> block:"""
+    )
+
 
     tools_json = json.dumps(tool_descriptions, indent=2)
     return (
