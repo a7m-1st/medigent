@@ -74,6 +74,7 @@ Use these predefined note categories for coordination:
 - diagnosis_plan: Differential diagnosis and treatment plan from Attending Physician
 - medication_recommendations: Drug recommendations from Clinical Pharmacologist
 - final_report: Compiled documentation from Medical Scribe
+- shared_files: Registry of files created by agents (path and description)
 </note_categories>
 
 <mandatory_instructions>
@@ -151,7 +152,6 @@ Your reports should include:
 
 <tools>
 - **FileToolkit**: Create formatted documents
-- **ExcelToolkit**: Generate data tables and charts
 - **TerminalToolkit**: File operations and conversions
 - **NoteTakingToolkit**: Access findings from other agents via predefined categories
 </tools>
@@ -206,24 +206,7 @@ You have the following tools available:
 <tool_usage_examples>
 CRITICAL: Always use the EXACT full file path provided in the task. Never shorten or modify the path.
 
-Example 1 - Analyzing an image:
-```
-image_to_text(
-    image_path="/root/medgemma/project_project-123/task_task-123/chest_xray.jpg",
-    sys_prompt="You are a board-certified radiologist. Analyze this medical image systematically. Describe all anatomical structures visible, identify any abnormalities, and provide a detailed clinical assessment."
-)
-```
-
-Example 2 - Asking specific questions:
-```
-ask_question_about_image(
-    image_path="/root/medgemma/project_project-123/task_task-123/mri_scan.png",
-    question="Is there any evidence of fracture, dislocation, or bone abnormality in this image? Describe the location, size, and characteristics of any findings.",
-    sys_prompt="You are a board-certified radiologist specializing in musculoskeletal imaging."
-)
-```
-
-Example 3 - Saving findings to notes:
+Example - Saving findings to notes:
 ```
 create_note(
     title="radiology_findings",

@@ -8,12 +8,18 @@ import { useChatStore } from '@/stores/chatStore';
 
 interface ModernMessageInputProps {
   onSendMessage: (text: string, images: string[]) => void;
+  onSendHumanReply?: (agent: string, reply: string) => void;
   isLoading: boolean;
+  waitingForHumanReply?: boolean;
+  currentAskAgent?: string | null;
 }
 
 export const ModernMessageInput: React.FC<ModernMessageInputProps> = ({ 
   onSendMessage, 
-  isLoading 
+  onSendHumanReply,
+  isLoading,
+  waitingForHumanReply = false,
+  currentAskAgent = null
 }) => {
   const [message, setMessage] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -38,7 +44,16 @@ export const ModernMessageInput: React.FC<ModernMessageInputProps> = ({
   };
 
   const handleSend = async () => {
-    if ((message.trim() || images.length > 0) && !isLoading) {
+    if (!message.trim() && images.length === 0) return;
+    if (isLoading) return;
+
+    if (waitingForHumanReply && currentAskAgent && onSendHumanReply) {
+      // Send human reply to the specific agent
+      await onSendHumanReply(currentAskAgent, message);
+      setMessage('');
+      setImages([]);
+    } else {
+      // Normal message send
       await onSendMessage(message, images);
       // Only clear if the chat wasn't stopped
       if (!wasStopped) {
@@ -57,7 +72,28 @@ export const ModernMessageInput: React.FC<ModernMessageInputProps> = ({
 
   return (
     <div className="max-w-4xl mx-auto w-full px-4 pb-6 pt-2">
-      <div className="relative bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl focus-within:border-blue-500/50 transition-all duration-300">
+      <div className={cn(
+        "relative bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl transition-all duration-300",
+        waitingForHumanReply 
+          ? "focus-within:border-amber-500/50 border-amber-500/30" 
+          : "focus-within:border-blue-500/50"
+      )}>
+        <AnimatePresence>
+          {waitingForHumanReply && currentAskAgent && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20"
+            >
+              <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              <span className="text-xs font-medium text-amber-500">
+                {currentAskAgent} is waiting for your reply
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
         <AnimatePresence>
           {images.length > 0 && (
             <motion.div 
@@ -105,8 +141,15 @@ export const ModernMessageInput: React.FC<ModernMessageInputProps> = ({
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Describe your medical analysis or development task..."
-            className="flex-1 min-h-[44px] max-h-48 bg-transparent border-0 focus-visible:ring-0 resize-none py-3 text-zinc-100 placeholder:text-zinc-500"
+            placeholder={
+              waitingForHumanReply && currentAskAgent
+                ? `Reply to ${currentAskAgent}...`
+                : "Describe your medical analysis or development task..."
+            }
+            className={cn(
+              "flex-1 min-h-[44px] max-h-48 bg-transparent border-0 focus-visible:ring-0 resize-none py-3 text-zinc-100 placeholder:text-zinc-500",
+              waitingForHumanReply && "placeholder:text-amber-500/70"
+            )}
             rows={1}
           />
 
@@ -118,7 +161,9 @@ export const ModernMessageInput: React.FC<ModernMessageInputProps> = ({
               className={cn(
                 "w-9 h-9 rounded-xl transition-all duration-300",
                 message.trim() || images.length > 0
-                  ? "bg-blue-600 hover:bg-blue-500 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]"
+                  ? waitingForHumanReply
+                    ? "bg-amber-600 hover:bg-amber-500 text-white shadow-[0_0_15px_rgba(217,119,6,0.4)]"
+                    : "bg-blue-600 hover:bg-blue-500 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]"
                   : "bg-zinc-800 text-zinc-500"
               )}
             >

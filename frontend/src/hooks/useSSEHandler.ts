@@ -335,15 +335,23 @@ export function useSSEHandler() {
   }
 
   function handleAsk(data: SSEAskEvent['data']) {
+    // Set state to indicate we're waiting for human reply
+    chatStore.setWaitingForHumanReply(true, data.agent);
+    // Clear loading state so user can interact with the input
+    chatStore.setLoading(false);
+    
     chatStore.addMessage({
       id: `ask-${Date.now()}`,
       role: 'assistant',
-      content: `Question from ${data.agent}: ${data.question}`,
+      content: `**${data.agent}** is asking:\n\n${data.question}`,
       timestamp: new Date().toISOString(),
     });
   }
 
   function handleEnd(data: SSEEndEvent['data']) {
+    // Clear any pending human reply state when task ends
+    chatStore.setWaitingForHumanReply(false, null);
+    
     taskStore.setFinalSummary(data);
 
     chatStore.addMessage({
@@ -384,6 +392,8 @@ export function useSSEHandler() {
       // For non-rate-limit errors, we might want to stop
       chatStore.setStreaming(false);
       chatStore.setLoading(false);
+      // Clear any pending human reply state on error
+      chatStore.setWaitingForHumanReply(false, null);
 
       // Cancel all pending tasks and mark working agents as error
       // Use getState() to get fresh state
