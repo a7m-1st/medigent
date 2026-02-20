@@ -5,7 +5,7 @@ import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { useChatStore } from '@/stores/chatStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FileText, Paperclip, PauseCircle, Send, Upload, X } from 'lucide-react';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 // Default model configuration from environment variables
 const DEFAULT_MODEL_PLATFORM = import.meta.env.VITE_DEFAULT_MODEL_PLATFORM || 'GEMINI';
@@ -18,13 +18,27 @@ interface AttachedFile {
   type: 'image' | 'pdf';
 }
 
+const MOBILE_BREAKPOINT = 768;
+
 export const TaskInputPanel: React.FC = () => {
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState<AttachedFile[]>([]);
   const [isFocused, setIsFocused] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
+
+  // Handle responsive layout
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const { sendMessage, sendHumanReply, stopChat, isLoading, isStreaming } = useChat();
   const { geminiApiKey, backendHasApiKey } = useApiConfigStore();
@@ -384,8 +398,11 @@ export const TaskInputPanel: React.FC = () => {
         )}
       </div>
 
-      {/* Status Bar */}
-      <div className="px-4 pb-3 flex items-center justify-center gap-4 text-[10px] text-foreground-muted font-medium uppercase tracking-widest">
+      {/* Status Bar - Hidden on mobile */}
+      <div className={cn(
+        "px-4 pb-3 flex items-center justify-center gap-4 text-[10px] text-foreground-muted font-medium uppercase tracking-widest",
+        isMobile && "hidden"
+      )}>
         <span>Gemini 3 Flash</span>
         <span className="w-1 h-1 rounded-full bg-border" />
         <span>Multi-Agent System</span>

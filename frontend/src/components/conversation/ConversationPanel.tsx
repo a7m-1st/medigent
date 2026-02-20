@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useCallback } from 'react';
 import { useChatStore } from '@/stores/chatStore';
 import { MessageBubble } from './MessageBubble';
 import { ThinkingIndicator } from './ThinkingIndicator';
-import { Sparkles, Stethoscope, Brain, FileSearch, Globe } from 'lucide-react';
+import { LayoutDashboard, Stethoscope, Brain, FileSearch, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export const ConversationPanel: React.FC = () => {
@@ -68,8 +68,8 @@ const EmptyState: React.FC = () => {
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center select-none">
       {/* Logo */}
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center mb-6 shadow-glow-lg">
-        <Sparkles className="w-8 h-8 text-white" />
+      <div className="w-16 h-16 bg-accent rounded-2xl flex items-center justify-center mb-6 shadow-glow">
+        <LayoutDashboard className="w-8 h-8 text-accent-foreground" />
       </div>
 
       {/* Title */}

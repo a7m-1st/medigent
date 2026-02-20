@@ -11,6 +11,7 @@ import {
   HelpCircle,
   History,
   LayoutDashboard,
+  Menu,
   Monitor,
   Moon,
   PanelRightClose,
@@ -18,31 +19,48 @@ import {
   Settings,
   Sun,
 } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 // Responsive breakpoint
 const MOBILE_BREAKPOINT = 1024;
 
 export const DashboardPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [rightSidebarOpen, setRightSidebarOpen] = React.useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const { theme, setTheme, resolvedTheme } = useUIStore();
+  const isInitialMount = useRef(true);
 
-  // Handle responsive layout
+  // Handle responsive layout and URL params
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < MOBILE_BREAKPOINT;
       setIsMobile(mobile);
-      if (mobile && rightSidebarOpen) {
+      // Only auto-close on initial mount, not on every resize
+      if (isInitialMount.current && mobile && rightSidebarOpen) {
         setRightSidebarOpen(false);
       }
     };
 
     handleResize();
     window.addEventListener('resize', handleResize);
+    
+    // Check URL params for panel open
+    const panelParam = searchParams.get('panel');
+    if (panelParam === 'open') {
+      setRightSidebarOpen(true);
+      // Remove the param from URL
+      searchParams.delete('panel');
+      setSearchParams(searchParams);
+    }
+    
+    // Mark initial mount as complete
+    isInitialMount.current = false;
+    
     return () => window.removeEventListener('resize', handleResize);
-  }, [rightSidebarOpen]);
+  }, [rightSidebarOpen, searchParams, setSearchParams]);
 
   // Cycle through themes: light -> dark -> system
   const cycleTheme = () => {
@@ -58,8 +76,11 @@ export const DashboardPage: React.FC = () => {
     <div className="h-screen w-screen bg-background text-foreground flex overflow-hidden">
       <ApiKeyModal />
 
-      {/* Left Sidebar Navigation */}
-      <aside className="w-16 flex flex-col items-center py-6 border-r border-border bg-sidebar z-50 shrink-0">
+      {/* Left Sidebar Navigation - Hidden on mobile */}
+      <aside className={cn(
+        "w-16 flex-col items-center py-6 border-r border-border bg-sidebar z-50 shrink-0",
+        isMobile ? 'hidden' : 'flex'
+      )}>
         <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center mb-10 shadow-glow">
           <LayoutDashboard className="w-6 h-6 text-accent-foreground" />
         </div>
@@ -88,13 +109,23 @@ export const DashboardPage: React.FC = () => {
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col relative min-w-0">
         {/* Header */}
-        <header className="h-14 border-b border-border bg-background/80 backdrop-blur-md flex items-center justify-between px-6 z-30 shrink-0">
-          <div className="flex items-center gap-4">
+        <header className="h-14 border-b border-border bg-background/80 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 z-30 shrink-0">
+          <div className="flex items-center gap-3 sm:gap-4">
+            {/* Mobile Menu Button */}
+            {isMobile && (
+              <button
+                onClick={() => navigate('/menu')}
+                className="p-2 rounded-lg hover:bg-background-secondary text-foreground-secondary transition-colors"
+                title="Open menu"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            )}
             <h2 className="text-sm font-bold tracking-tight text-foreground-secondary">
               MedCrew
             </h2>
-            <div className="h-4 w-px bg-border" />
-            <div className="flex items-center gap-2">
+            <div className="h-4 w-px bg-border hidden sm:block" />
+            <div className="hidden sm:flex items-center gap-2">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
@@ -149,7 +180,7 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           {/* Right: Monitoring Sidebar */}
-          <AnimatePresence mode="wait">
+          <AnimatePresence>
             {rightSidebarOpen && (
               <motion.aside
                 initial={{ width: 0, opacity: 0 }}
