@@ -1,8 +1,6 @@
 import asyncio
-import base64
 import datetime
 import logging
-import os
 import platform
 from pathlib import Path
 from typing import Any
@@ -106,9 +104,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
         )
 
         # Check session timeout (1 hour)
-        elapsed = (
-            datetime.datetime.now() - session_start_time
-        ).total_seconds()
+        elapsed = (datetime.datetime.now() - session_start_time).total_seconds()
         if elapsed > SESSION_TIMEOUT_SECONDS:
             # Stop workforce if running
             if workforce is not None and workforce._running:
@@ -127,9 +123,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 },
             )
             # Clean up task lock
-            logger.info(
-                "[LIFECYCLE] Deleting task lock due to session timeout"
-            )
+            logger.info("[LIFECYCLE] Deleting task lock due to session timeout")
             await delete_task_lock(task_lock.id)
             break
 
@@ -243,14 +237,6 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         if item.data.attaches
                         else options.attaches
                     )
-                    # Process base64 attachments
-                    save_dir = options.file_save_path("attachments")
-                    attaches_to_use = process_attachments(
-                        attaches_to_use,
-                        save_dir,
-                        options.project_id,
-                        options.task_id,
-                    )
                     logger.info(
                         "[NEW-QUESTION] Follow-up "
                         "question from "
@@ -294,7 +280,8 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     continue
 
                 logger.info(
-                    "[NEW-QUESTION] Processing task via workforce flow"
+                    "[NEW-QUESTION] Processing task "
+                    "via workforce flow"
                 )
                 # Update the sync_step with new task_id
                 if hasattr(item, "new_task_id") and item.new_task_id:
@@ -460,7 +447,8 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                             sub_tasks = stream_state["subtasks"]
                         state_holder["sub_tasks"] = sub_tasks
                         logger.info(
-                            f"Task decomposed into {len(sub_tasks)} subtasks"
+                            "Task decomposed into "
+                            f"{len(sub_tasks)} subtasks"
                         )
                         try:
                             task_lock.decompose_sub_tasks = sub_tasks
@@ -594,9 +582,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                             )
                         )
 
-                task = asyncio.create_task(
-                    workforce_start_with_error_handling()
-                )
+                task = asyncio.create_task(workforce_start_with_error_handling())
                 task_lock.add_background_task(task)
             elif item.action == Action.task_state:
                 # Track completed task results for the end event
@@ -818,9 +804,15 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 )
                 try:
                     await delete_task_lock(task_lock.id)
-                    logger.info("[LIFECYCLE] Task lock deleted after task end")
+                    logger.info(
+                        "[LIFECYCLE] Task lock deleted "
+                        "after task end"
+                    )
                 except Exception as e:
-                    logger.error(f"Error deleting task lock on end: {e}")
+                    logger.error(
+                        f"Error deleting task lock "
+                        f"on end: {e}"
+                    )
                 break
 
             elif item.action == Action.stop:

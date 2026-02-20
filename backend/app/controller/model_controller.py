@@ -1,11 +1,13 @@
+
+
 import logging
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.component.error_format import normalize_error_to_openai_format
 from app.component.model_validation import create_agent
-from app.model.chat import MEDGEMMA_DEFAULT_URL, PLATFORM_MAPPING
+from app.model.chat import PLATFORM_MAPPING
 
 logger = logging.getLogger("model_controller")
 
@@ -28,16 +30,6 @@ class ValidateModelRequest(BaseModel):
     @classmethod
     def map_model_platform(cls, v: str) -> str:
         return PLATFORM_MAPPING.get(v, v)
-
-    @model_validator(mode="after")
-    def set_medgemma_defaults(self):
-        """Auto-set default URL for MedGemma if not provided."""
-        if self.model_platform == "MedGemma" and not self.url:
-            self.url = MEDGEMMA_DEFAULT_URL
-            logger.info(
-                f"MedGemma platform detected, using default URL: {MEDGEMMA_DEFAULT_URL}"
-            )
-        return self
 
 
 class ValidateModelResponse(BaseModel):
