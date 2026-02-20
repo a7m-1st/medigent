@@ -10,3 +10,4 @@ export { useAgentStatusStore, AgentStatusSchema, MAIN_AGENT_NAMES } from './agen
 export { useTaskDecompStore } from './taskDecompStore'
 export { useResourceStore, TerminalEntrySchema, SnapshotEntrySchema } from './resourceStore'
 export type { SnapshotEntry, TerminalEntry } from './resourceStore'
+export { useProjectStore } from './projectStore'

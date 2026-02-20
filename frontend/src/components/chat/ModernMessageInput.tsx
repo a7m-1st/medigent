@@ -1,10 +1,10 @@
-import React, { useState, useRef } from 'react';
-import { Send, X, Paperclip } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/stores/chatStore';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Paperclip, Send, X } from 'lucide-react';
+import React, { useRef, useState } from 'react';
 
 interface ModernMessageInputProps {
   onSendMessage: (text: string, images: string[]) => void;
@@ -180,7 +180,7 @@ export const ModernMessageInput: React.FC<ModernMessageInputProps> = ({
         <span className="w-1 h-1 rounded-full bg-zinc-800" />
         <span>Multi-Agent System</span>
         <span className="w-1 h-1 rounded-full bg-zinc-800" />
-        <span>Encrypted</span>
+        <span>STATELESS</span>
       </div>
     </div>
   );

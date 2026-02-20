@@ -25,8 +25,10 @@ import {
   useResourceStore,
   useChatStore,
 } from '@/stores';
+import { useProjectStore } from '@/stores/projectStore';
 import { MAIN_AGENT_NAMES, AGENT_DISPLAY_NAMES } from '@/stores/agentStatusStore';
 import * as taskService from '@/services/taskService';
+import type { ChatMessage } from '@/types';
 
 // ============================================
 // Main Agent Names check helper
@@ -48,6 +50,15 @@ export function useSSEHandler() {
   const taskStore = useTaskDecompStore();
   const resourceStore = useResourceStore();
   const chatStore = useChatStore();
+
+  // Helper: add message to both chatStore and projectStore for persistence
+  function addMessageAndPersist(message: ChatMessage) {
+    chatStore.addMessage(message);
+    const projectId = useChatStore.getState().currentProjectId;
+    if (projectId) {
+      useProjectStore.getState().addMessageToProject(projectId, message);
+    }
+  }
 
   const handleEvent = useCallback((event: unknown) => {
     let validatedEvent: SSEEvent;
@@ -167,6 +178,19 @@ export function useSSEHandler() {
       agentStore.setAgentCompleted(data.agent_name, data.agent_id, data.message, data.tokens);
     } else if (data.agent_name === 'task_summary_agent') {
       taskStore.setSummaryTask(data.message);
+
+      // Extract project title from message (format: "Title | Description")
+      // and update the project in projectStore
+      const projectId = useChatStore.getState().currentProjectId;
+      if (projectId && data.message) {
+        const parts = data.message.split('|');
+        const title = parts.length >= 2
+          ? parts.slice(1).join('|').trim()  // Everything after the first pipe
+          : data.message.slice(0, 80);
+        useProjectStore.getState().updateProject(projectId, { title });
+        // Update HTML title
+        document.title = `MedCrew | ${title}`;
+      }
     }
   }
 
@@ -306,17 +330,23 @@ export function useSSEHandler() {
   }
 
   function handleWriteFile(data: SSEWriteFileEvent['data']) {
-    chatStore.addMessage({
+    addMessageAndPersist({
       id: `file-${Date.now()}`,
       role: 'system',
       content: `File created: ${data.file_path}`,
       timestamp: new Date().toISOString(),
     });
+
+    // Track file in project store
+    const projectId = useChatStore.getState().currentProjectId;
+    if (projectId) {
+      useProjectStore.getState().addFileToProject(projectId, data.file_path);
+    }
   }
 
   function handleNotice(data: SSENoticeEvent['data']) {
-    // Add as chat message
-    chatStore.addMessage({
+    // Add as chat message and persist to project
+    addMessageAndPersist({
       id: `notice-${Date.now()}`,
       role: 'system',
       content: data.notice,
@@ -343,7 +373,7 @@ export function useSSEHandler() {
     // Clear loading state so user can interact with the input
     chatStore.setLoading(false);
     
-    chatStore.addMessage({
+    addMessageAndPersist({
       id: `ask-${Date.now()}`,
       role: 'assistant',
       content: `**${agentDisplayName}** is asking:\n\n${data.question}`,
@@ -357,7 +387,7 @@ export function useSSEHandler() {
     
     taskStore.setFinalSummary(data);
 
-    chatStore.addMessage({
+    addMessageAndPersist({
       id: `end-${Date.now()}`,
       role: 'assistant',
       content: data,

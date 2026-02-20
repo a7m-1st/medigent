@@ -4,11 +4,14 @@ import { ConversationPanel } from '@/components/conversation/ConversationPanel';
 import { ErrorBanner } from '@/components/layout/ErrorBanner';
 import { MonitoringPanel } from '@/components/task-panel/MonitoringPanel';
 import { cn } from '@/lib/utils';
-import { useAgentStatusStore, useChatStore, useResourceStore, useTaskDecompStore, useUIStore } from '@/stores';
+import { useUIStore } from '@/stores';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
+import { useChatStore } from '@/stores/chatStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  ArrowLeft,
+  FileText,
   HelpCircle,
   History,
   LayoutDashboard,
@@ -21,19 +24,27 @@ import {
   Sun,
 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
-// Responsive breakpoint
 const MOBILE_BREAKPOINT = 1024;
 
-export const DashboardPage: React.FC = () => {
+export const ProjectPage: React.FC = () => {
+  const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [rightSidebarOpen, setRightSidebarOpen] = React.useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const { theme, setTheme, resolvedTheme } = useUIStore();
   const isInitialMount = useRef(true);
-  const { isConfigured, checkBackendConfig } = useApiConfigStore();
+
+  const project = useProjectStore((s) =>
+    s.projects.find((p) => p.id === projectId)
+  );
+  const setCurrentProject = useProjectStore((s) => s.setCurrentProject);
+  const setChatCurrentProject = useChatStore((s) => s.setCurrentProject);
+  const clearMessages = useChatStore((s) => s.clearMessages);
+  const addMessage = useChatStore((s) => s.addMessage);
+  const { isConfigured, checkBackendConfig, setModalOpen } = useApiConfigStore();
 
   // Check backend config on mount
   useEffect(() => {
@@ -50,6 +61,30 @@ export const DashboardPage: React.FC = () => {
       setSearchParams(searchParams, { replace: true });
     }
   }, []);
+
+  // Set current project on mount and load messages from project store
+  useEffect(() => {
+    if (projectId && project) {
+      setCurrentProject(projectId);
+      setChatCurrentProject(projectId);
+
+      // Load persisted messages into chat store
+      clearMessages();
+      for (const msg of project.messages) {
+        addMessage(msg);
+      }
+    }
+  }, [projectId]); // Only run when projectId changes
+
+  // Set HTML title
+  useEffect(() => {
+    if (project) {
+      document.title = `MedCrew | ${project.title}`;
+    }
+    return () => {
+      document.title = 'MedCrew';
+    };
+  }, [project?.title]);
 
   // Handle responsive layout
   useEffect(() => {
@@ -72,7 +107,6 @@ export const DashboardPage: React.FC = () => {
     isInitialMount.current = false;
   }, [isMobile]);
 
-  // Cycle through themes: light -> dark -> system
   const cycleTheme = () => {
     const themes: ('light' | 'dark' | 'system')[] = ['light', 'dark', 'system'];
     const currentIndex = themes.indexOf(theme);
@@ -82,40 +116,51 @@ export const DashboardPage: React.FC = () => {
 
   const ThemeIcon = theme === 'system' ? Monitor : resolvedTheme === 'dark' ? Moon : Sun;
 
+  if (!project) {
+    return (
+      <div className="h-screen w-screen bg-background text-foreground flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-lg font-semibold mb-2">Project not found</h2>
+          <p className="text-sm text-foreground-muted mb-4">
+            This project may have been deleted or the URL is incorrect.
+          </p>
+          <button
+            onClick={() => navigate('/history')}
+            className="text-sm text-accent hover:underline"
+          >
+            Back to History
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen w-screen bg-background text-foreground flex overflow-hidden">
-      <ApiKeyModal />
-
       {/* Left Sidebar Navigation - Hidden on mobile */}
       <aside className={cn(
         "w-16 flex-col items-center py-6 border-r border-border bg-sidebar z-50 shrink-0",
         isMobile ? 'hidden' : 'flex'
       )}>
-        <button
-          onClick={() => {
-            useChatStore.getState().reset();
-            useAgentStatusStore.getState().reset();
-            useTaskDecompStore.getState().reset();
-            useResourceStore.getState().reset();
-            navigate('/');
-          }}
-          className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center mb-10 shadow-glow hover:opacity-90 transition-opacity"
-        >
+        <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center mb-10 shadow-glow">
           <LayoutDashboard className="w-6 h-6 text-accent-foreground" />
-        </button>
+        </div>
 
         <div className="flex-1 flex flex-col gap-6">
-          <NavIcon icon={<History className="w-5 h-5" />} onClick={() => navigate('/history')} />
+          <NavIcon
+            icon={<History className="w-5 h-5" />}
+            onClick={() => navigate('/history')}
+          />
           <NavIcon
             icon={<Settings className="w-5 h-5" />}
-            onClick={() => useApiConfigStore.getState().clearApiKey()}
+            onClick={() => setModalOpen(true)}
+            tooltip="API Config"
           />
           <Link to="/thank-you">
             <NavIcon icon={<HelpCircle className="w-5 h-5" />} />
           </Link>
         </div>
 
-        {/* Theme toggle at bottom */}
         <div className="mt-auto">
           <NavIcon
             icon={<ThemeIcon className="w-5 h-5" />}
@@ -141,14 +186,14 @@ export const DashboardPage: React.FC = () => {
               </button>
             )}
             <button
-              onClick={() => {
-                const project = useProjectStore.getState().createProject();
-                navigate(`/project/${project.id}`);
-              }}
-              className="text-sm font-bold tracking-tight text-foreground-secondary hover:text-accent transition-colors"
+              onClick={() => navigate('/history')}
+              className="p-1.5 rounded-lg hover:bg-background-secondary text-foreground-muted hover:text-foreground transition-colors"
             >
-              MedCrew
+              <ArrowLeft className="w-4 h-4" />
             </button>
+            <h2 className="text-sm font-bold tracking-tight text-foreground-secondary truncate max-w-[200px] sm:max-w-[300px]">
+              {project.title}
+            </h2>
             <div className="h-4 w-px bg-border hidden sm:block" />
             <div className="hidden sm:flex items-center gap-2">
               <span className="relative flex h-2 w-2">
@@ -171,6 +216,14 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* File count badge */}
+            {project.files.length > 0 && (
+              <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-background-secondary text-foreground-muted text-xs">
+                <FileText className="w-3 h-3" />
+                {project.files.length} files
+              </div>
+            )}
+
             {/* Right sidebar toggle */}
             <button
               onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
@@ -217,9 +270,9 @@ export const DashboardPage: React.FC = () => {
           <AnimatePresence>
             {rightSidebarOpen && (
               <motion.aside
-                initial={isMobile ? { x: '100%', opacity: 0 } : { width: 0, opacity: 0 }}
-                animate={isMobile ? { x: 0, opacity: 1 } : { width: 420, opacity: 1 }}
-                exit={isMobile ? { x: '100%', opacity: 0 } : { width: 0, opacity: 0 }}
+                initial={isMobile ? { x: '100%', opacity: 0 } : { x: 420, opacity: 0 }}
+                animate={isMobile ? { x: 0, opacity: 1 } : { x: 0, opacity: 1 }}
+                exit={isMobile ? { x: '100%', opacity: 0 } : { x: 420, opacity: 0 }}
                 transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
                 className={cn(
                   "bg-background border-l border-border flex flex-col shrink-0 overflow-hidden",
@@ -243,17 +296,15 @@ export const DashboardPage: React.FC = () => {
                   <div className="flex-1 flex flex-col border-b border-border overflow-hidden min-h-0">
                     <MonitoringPanel />
                   </div>
-
-                  {/* Browser Snapshots */}
-                  {/* <div className="h-[240px] overflow-hidden shrink-0">
-                    <BrowserSnapshots />
-                  </div> */}
                 </div>
               </motion.aside>
             )}
           </AnimatePresence>
         </div>
       </main>
+
+      {/* API Key Modal */}
+      <ApiKeyModal />
     </div>
   );
 };

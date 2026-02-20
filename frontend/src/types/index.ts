@@ -131,3 +131,6 @@ export {
   type ApiRequestConfig,
   type PaginationMeta,
 } from './api';
+
+// Project types
+export type { Project } from './project';
