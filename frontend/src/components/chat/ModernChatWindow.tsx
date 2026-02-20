@@ -50,6 +50,7 @@ export const ModernChatWindow: React.FC = () => {
   const setWasStopped = useChatStore((state) => state.setWasStopped);
   const waitingForHumanReply = useChatStore((state) => state.waitingForHumanReply);
   const currentAskAgent = useChatStore((state) => state.currentAskAgent);
+  const currentAskAgentDisplayName = useChatStore((state) => state.currentAskAgentDisplayName);
   const setWaitingForHumanReply = useChatStore((state) => state.setWaitingForHumanReply);
 
   const handleSendMessage = async (text: string, images: string[]) => {
@@ -138,6 +139,7 @@ export const ModernChatWindow: React.FC = () => {
           isLoading={isProcessing}
           waitingForHumanReply={waitingForHumanReply}
           currentAskAgent={currentAskAgent}
+          currentAskAgentDisplayName={currentAskAgentDisplayName}
         />
       </div>
     </div>

@@ -25,7 +25,7 @@ import {
   useResourceStore,
   useChatStore,
 } from '@/stores';
-import { MAIN_AGENT_NAMES } from '@/stores/agentStatusStore';
+import { MAIN_AGENT_NAMES, AGENT_DISPLAY_NAMES } from '@/stores/agentStatusStore';
 import * as taskService from '@/services/taskService';
 
 // ============================================
@@ -335,15 +335,18 @@ export function useSSEHandler() {
   }
 
   function handleAsk(data: SSEAskEvent['data']) {
+    // Convert camelcase agent name to display name
+    const agentDisplayName = AGENT_DISPLAY_NAMES[data.agent] || data.agent;
+    
     // Set state to indicate we're waiting for human reply
-    chatStore.setWaitingForHumanReply(true, data.agent);
+    chatStore.setWaitingForHumanReply(true, data.agent, agentDisplayName);
     // Clear loading state so user can interact with the input
     chatStore.setLoading(false);
     
     chatStore.addMessage({
       id: `ask-${Date.now()}`,
       role: 'assistant',
-      content: `**${data.agent}** is asking:\n\n${data.question}`,
+      content: `**${agentDisplayName}** is asking:\n\n${data.question}`,
       timestamp: new Date().toISOString(),
     });
   }

@@ -31,6 +31,7 @@ export const TaskInputPanel: React.FC = () => {
   const wasStopped = useChatStore((state) => state.wasStopped);
   const waitingForHumanReply = useChatStore((state) => state.waitingForHumanReply);
   const currentAskAgent = useChatStore((state) => state.currentAskAgent);
+  const currentAskAgentDisplayName = useChatStore((state) => state.currentAskAgentDisplayName);
   const setWaitingForHumanReply = useChatStore((state) => state.setWaitingForHumanReply);
 
   const isProcessing = (isStreaming || isLoading) && !wasStopped && !waitingForHumanReply;
@@ -250,7 +251,7 @@ export const TaskInputPanel: React.FC = () => {
           >
             <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
             <span className="text-xs font-medium text-amber-500">
-              {currentAskAgent} is waiting for your reply
+              {currentAskAgentDisplayName || currentAskAgent} is waiting for your reply
             </span>
           </motion.div>
         )}

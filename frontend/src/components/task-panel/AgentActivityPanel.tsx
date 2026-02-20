@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { useAgentStatusStore, MAIN_AGENT_NAMES, type AgentStatus } from '@/stores/agentStatusStore';
+import { useAgentStatusStore, MAIN_AGENT_NAMES, MEDGEMMA_AGENTS, type AgentStatus } from '@/stores/agentStatusStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Bot,
@@ -191,6 +191,11 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent }) => {
             <span className={cn('text-sm font-medium', colors.text)}>
               {agent.displayName}
             </span>
+            {MEDGEMMA_AGENTS.includes(agent.name) && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-500/20 text-teal-600 dark:text-teal-400 font-medium">
+                MedGemma
+              </span>
+            )}
           </div>
           {agent.state === 'working' && agent.currentToolkit && (
             <div className="flex items-center gap-1.5 mt-1">
