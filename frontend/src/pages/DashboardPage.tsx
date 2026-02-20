@@ -1,26 +1,25 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { ApiKeyModal } from '@/components/api-key/ApiKeyModal';
 import { TaskInputPanel } from '@/components/chat/TaskInputPanel';
-import { MonitoringPanel } from '@/components/task-panel/MonitoringPanel';
-import { BrowserSnapshots } from '@/components/resources/BrowserSnapshots';
 import { ConversationPanel } from '@/components/conversation/ConversationPanel';
 import { ErrorBanner } from '@/components/layout/ErrorBanner';
-import { useApiConfigStore } from '@/stores/apiConfigStore';
+import { MonitoringPanel } from '@/components/task-panel/MonitoringPanel';
+import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores';
+import { useApiConfigStore } from '@/stores/apiConfigStore';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
-  LayoutDashboard,
-  Settings,
-  History,
   HelpCircle,
+  History,
+  LayoutDashboard,
+  Monitor,
+  Moon,
   PanelRightClose,
   PanelRightOpen,
-  Moon,
+  Settings,
   Sun,
-  Monitor,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { AnimatePresence, motion } from 'framer-motion';
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 // Responsive breakpoint
 const MOBILE_BREAKPOINT = 1024;
@@ -181,9 +180,9 @@ export const DashboardPage: React.FC = () => {
                   </div>
 
                   {/* Browser Snapshots */}
-                  <div className="h-[240px] overflow-hidden shrink-0">
+                  {/* <div className="h-[240px] overflow-hidden shrink-0">
                     <BrowserSnapshots />
-                  </div>
+                  </div> */}
                 </div>
               </motion.aside>
             )}
