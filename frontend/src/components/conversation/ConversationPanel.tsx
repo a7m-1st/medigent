@@ -9,11 +9,12 @@ export const ConversationPanel: React.FC = () => {
   const messages = useChatStore((s) => s.messages);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const isLoading = useChatStore((s) => s.isLoading);
+  const waitingForHumanReply = useChatStore((s) => s.waitingForHumanReply);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isUserScrolledUp = useRef(false);
 
-  const showThinking = (isStreaming || isLoading) && messages.length > 0;
+  const showThinking = (isStreaming || isLoading) && messages.length > 0 && !waitingForHumanReply;
   const isEmpty = messages.length === 0 && !isLoading;
 
   // Track if user has scrolled up (to avoid fighting their scroll position)

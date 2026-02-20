@@ -9,7 +9,7 @@ from app.utils.listen.toolkit_listen import auto_listen_toolkit
 
 @auto_listen_toolkit(BaseNoteTakingToolkit)
 class NoteTakingToolkit(BaseNoteTakingToolkit, AbstractToolkit):
-    agent_name: str = Agents.document_agent
+    agent_name: str = Agents.medical_scribe
 
     def __init__(
         self,

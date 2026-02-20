@@ -33,7 +33,7 @@ from app.utils.listen.toolkit_listen import (
 
 @auto_listen_toolkit(BaseFileToolkit)
 class FileToolkit(BaseFileToolkit, AbstractToolkit):
-    agent_name: str = Agents.document_agent
+    agent_name: str = Agents.medical_scribe
 
     def __init__(
         self,

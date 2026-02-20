@@ -20,13 +20,16 @@ export const TaskInputPanel: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
-  const { sendMessage, stopChat, isLoading, isStreaming } = useChat();
+  const { sendMessage, sendHumanReply, stopChat, isLoading, isStreaming } = useChat();
   const { geminiApiKey, backendHasApiKey } = useApiConfigStore();
   const wasStopped = useChatStore((state) => state.wasStopped);
+  const waitingForHumanReply = useChatStore((state) => state.waitingForHumanReply);
+  const currentAskAgent = useChatStore((state) => state.currentAskAgent);
+  const setWaitingForHumanReply = useChatStore((state) => state.setWaitingForHumanReply);
 
-  const isProcessing = (isStreaming || isLoading) && !wasStopped;
+  const isProcessing = (isStreaming || isLoading) && !wasStopped && !waitingForHumanReply;
   const hasContent = message.trim() || images.length > 0;
-  const canSend = hasContent && !isProcessing;
+  const canSend = hasContent && (!isProcessing || waitingForHumanReply);
 
   // Process files (from input or drag & drop)
   const processFiles = useCallback((files: FileList | File[]) => {
@@ -93,7 +96,35 @@ export const TaskInputPanel: React.FC = () => {
   }, [isProcessing, processFiles]);
 
   const handleSend = async () => {
-    console.log('Send clicked! Message:', message, 'Processing:', isProcessing, 'API Key exists:', !!geminiApiKey);
+    console.log('Send clicked! Message:', message, 'Processing:', isProcessing, 'API Key exists:', !!geminiApiKey, 'WaitingForHumanReply:', waitingForHumanReply);
+    
+    // Handle human reply mode
+    if (waitingForHumanReply && currentAskAgent && message.trim()) {
+      const currentMessage = message;
+      setMessage('');
+      setImages([]);
+
+      // Add user message to chat immediately
+      useChatStore.getState().addMessage({
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: currentMessage,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Clear the waiting state
+      setWaitingForHumanReply(false, null);
+
+      try {
+        await sendHumanReply(currentAskAgent, currentMessage);
+        console.log('Human reply sent successfully');
+      } catch (error) {
+        console.error('Failed to send human reply:', error);
+        setMessage(currentMessage);
+      }
+      return;
+    }
+    
     if ((message.trim() || images.length > 0) && !isProcessing) {
       // Check if API key is configured (frontend or backend)
       if (!geminiApiKey && !backendHasApiKey) {
@@ -131,7 +162,7 @@ export const TaskInputPanel: React.FC = () => {
           api_url: DEFAULT_MODEL_API_URL,
           language: "en",
           browser_port: 9222,
-          max_retries: 3,
+          max_retries: 5,
           allow_local_system: false,
           installed_mcp: { mcpServers: {} },
           bun_mirror: "",
@@ -194,6 +225,23 @@ export const TaskInputPanel: React.FC = () => {
         )}
       </AnimatePresence>
 
+      {/* Human Reply Banner */}
+      <AnimatePresence>
+        {waitingForHumanReply && currentAskAgent && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20"
+          >
+            <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+            <span className="text-xs font-medium text-amber-500">
+              {currentAskAgent} is waiting for your reply
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Attached Images */}
       <AnimatePresence>
         {images.length > 0 && (
@@ -252,7 +300,8 @@ export const TaskInputPanel: React.FC = () => {
         <div
           className={cn(
             "flex-1 relative rounded-xl transition-all duration-200",
-            isFocused && "ring-2 ring-accent/20"
+            isFocused && !waitingForHumanReply && "ring-2 ring-accent/20",
+            isFocused && waitingForHumanReply && "ring-2 ring-amber-500/30"
           )}
         >
           <input
@@ -262,17 +311,23 @@ export const TaskInputPanel: React.FC = () => {
             onKeyDown={handleKeyDown}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder="Enter your task or question..."
+            placeholder={waitingForHumanReply && currentAskAgent
+              ? `Reply to ${currentAskAgent}...`
+              : "Enter your task or question..."
+            }
             className={cn(
               "w-full bg-input border border-input-border rounded-xl px-4 py-3",
               "text-foreground placeholder:text-foreground-muted",
-              "focus:outline-none focus:border-accent transition-colors",
-              isProcessing && "opacity-60"
+              "focus:outline-none transition-colors",
+              waitingForHumanReply 
+                ? "border-amber-500/40 focus:border-amber-500 placeholder:text-amber-500/60"
+                : "focus:border-accent",
+              isProcessing && !waitingForHumanReply && "opacity-60"
             )}
           />
         </div>
 
-        {isStreaming ? (
+        {isStreaming && !waitingForHumanReply ? (
           <Button
             size="icon"
             onClick={stopChat}
@@ -291,7 +346,9 @@ export const TaskInputPanel: React.FC = () => {
             className={cn(
               "w-10 h-10 rounded-xl transition-all duration-300 shrink-0",
               canSend
-                ? "bg-accent hover:bg-accent-hover text-accent-foreground shadow-glow"
+                ? waitingForHumanReply
+                  ? "bg-amber-600 hover:bg-amber-500 text-white shadow-[0_0_15px_rgba(217,119,6,0.4)]"
+                  : "bg-accent hover:bg-accent-hover text-accent-foreground shadow-glow"
                 : "bg-background-tertiary text-foreground-muted cursor-not-allowed"
             )}
           >

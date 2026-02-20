@@ -16,7 +16,14 @@ export const ActivityEntrySchema = z.object({
 export type ActivityEntry = z.infer<typeof ActivityEntrySchema>;
 
 export const AgentStatusSchema = z.object({
-  name: z.enum(['browser_agent', 'developer_agent', 'document_agent', 'multi_modal_agent']),
+  name: z.enum([
+    'attending_physician',
+    'chief_of_medicine',
+    'clinical_pharmacologist',
+    'clinical_researcher',
+    'medical_scribe',
+    'radiologist',
+  ]),
   displayName: z.string(),
   // Track all known IDs for this agent (backend may use different IDs across events)
   knownIds: z.array(z.string()),
@@ -40,20 +47,24 @@ export type AgentStatus = z.infer<typeof AgentStatusSchema>;
 // Display name mapping
 // ============================================
 const AGENT_DISPLAY_NAMES: Record<string, string> = {
-  browser_agent: 'Browser Agent',
-  developer_agent: 'Developer Agent',
-  document_agent: 'Document Agent',
-  multi_modal_agent: 'Multi-Modal Agent',
+  attending_physician: 'Attending Physician',
+  chief_of_medicine: 'Chief of Medicine',
+  clinical_pharmacologist: 'Clinical Pharmacologist',
+  clinical_researcher: 'Clinical Researcher',
+  medical_scribe: 'Medical Scribe',
+  radiologist: 'Radiologist',
 };
 
 // ============================================
 // Main Agents List
 // ============================================
 export const MAIN_AGENT_NAMES = [
-  'browser_agent',
-  'developer_agent',
-  'document_agent',
-  'multi_modal_agent',
+  'attending_physician',
+  'chief_of_medicine',
+  'clinical_pharmacologist',
+  'clinical_researcher',
+  'medical_scribe',
+  'radiologist',
 ] as const;
 
 export type MainAgentName = typeof MAIN_AGENT_NAMES[number];
@@ -93,7 +104,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
     idToName: {},
 
     /**
-     * Create a new agent entry (only for main 4 agents), keyed by name
+     * Create a new agent entry (only for main 6 medical agents), keyed by name
      */
     createAgent: (agentId: string, agentName: string, tools: string[]) => {
       if (!MAIN_AGENT_NAMES.includes(agentName as MainAgentName)) {

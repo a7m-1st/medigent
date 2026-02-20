@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Callable
 from threading import Event
 from typing import Any
@@ -14,7 +15,8 @@ from camel.agents.chat_agent import (
     StreamingChatAgentResponse,
 )
 from camel.memories import AgentMemory
-from camel.messages import BaseMessage
+from camel.messages import BaseMessage, OpenAIMessage
+from camel.messages.conversion.sharegpt.hermes import HermesFunctionFormatter
 from camel.models import BaseModelBackend, ModelManager, ModelProcessingError
 from camel.responses import ChatAgentResponse
 from camel.terminators import ResponseTerminator
@@ -79,8 +81,11 @@ class ListenChatAgent(ChatAgent):
         prune_tool_calls_from_memory: bool = False,
         enable_snapshot_clean: bool = False,
         step_timeout: float | None = 1800,  # 30 minutes
+        support_native_tool_calling: bool = True,
         **kwargs: Any,
     ) -> None:
+        self.support_native_tool_calling = support_native_tool_calling
+        self._hermes_formatter = HermesFunctionFormatter() if not support_native_tool_calling else None
         super().__init__(
             system_message=system_message,
             model=model,
@@ -108,6 +113,155 @@ class ListenChatAgent(ChatAgent):
         self.agent_name = agent_name
 
     process_task_id: str = ""
+
+    def _get_full_tool_schemas(self):
+        """Override: suppress tool schemas for models without native support.
+
+        When simulated tool calling is active, tools are handled via
+        text-based Hermes format.  Sending OpenAI-style ``tools`` JSON
+        to a model that doesn't support it can cause the model to produce
+        ``assistant`` messages with ``tool_calls`` entries, which CAMEL
+        then records in memory as ``tool`` role messages.  These break
+        strict role-alternation templates.
+        """
+        if not self.support_native_tool_calling:
+            return []
+        return super()._get_full_tool_schemas()
+
+    @staticmethod
+    def _extract_text(content) -> str:
+        """Extract plain text from an OpenAI message content field.
+
+        Content may be a ``str``, a ``list`` of content parts
+        (e.g. ``[{"type": "text", "text": "..."}]``), or ``None``.
+        """
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    parts.append(item.get("text", ""))
+                elif isinstance(item, str):
+                    parts.append(item)
+            return "\n".join(parts)
+        return str(content)
+
+    @staticmethod
+    def _sanitize_message_roles(
+        messages: list[OpenAIMessage],
+    ) -> list[OpenAIMessage]:
+        """Ensure message roles alternate user/assistant as required by
+        models with strict Jinja chat templates (e.g. glm-4, MedGemma).
+
+        Rules applied in order:
+        1. Messages with roles other than ``user`` and ``assistant``
+           (``system``, ``tool``, ``function``, ``developer``) are
+           converted to ``user``.
+        2. Any remaining consecutive messages with the same role are
+           merged (their ``content`` fields are joined with newlines).
+        3. If the sequence ends with a ``user`` message (required by
+           many models), nothing extra is added; if it ends with
+           ``assistant``, a no-op is fine for most templates.
+
+        The function returns a *new* list; the originals are not mutated.
+        """
+        if not messages:
+            return messages
+
+        extract = ListenChatAgent._extract_text
+
+        # --- Step 1: normalise roles to user / assistant only -------------
+        working: list[OpenAIMessage] = []
+        for msg in messages:
+            copied = dict(msg)  # shallow copy
+            role = copied.get("role", "user")
+            if role not in ("user", "assistant"):
+                copied["role"] = "user"
+            # Normalise content to plain string for safe merging
+            copied["content"] = extract(copied.get("content"))
+            # Strip keys that are invalid for non-assistant/non-tool msgs
+            for key in ("tool_calls", "tool_call_id", "name"):
+                copied.pop(key, None)
+            working.append(copied)
+
+        # --- Step 2: merge consecutive same-role messages -----------------
+        merged: list[OpenAIMessage] = [working[0]]
+        for msg in working[1:]:
+            prev = merged[-1]
+            if msg["role"] == prev["role"]:
+                # Merge content
+                prev_content = prev.get("content", "") or ""
+                cur_content = msg.get("content", "") or ""
+                prev["content"] = f"{prev_content}\n{cur_content}"
+            else:
+                merged.append(msg)
+
+        return merged
+
+    @staticmethod
+    def _normalize_tool_call_format(content: str) -> str:
+        """Normalize tool call syntax variants to the canonical Hermes format.
+
+        The model sometimes wraps the tool call in markdown code fences
+        (e.g. ```tool_call\\n{...}\\n```) instead of the required XML
+        <tool_call> tags.  This method converts known variants so that
+        ``HermesFunctionFormatter.extract_tool_calls`` can parse them.
+
+        Currently handles:
+        - ```tool_call\\n{...}\\n``` → <tool_call>{...}</tool_call>
+        - ```xml\\n<tool_call>...</tool_call>\\n``` → unwrapped as-is
+        - Plain <tool_call>...</tool_call> → unchanged
+        """
+        # Pattern: ```tool_call\n{...}\n``` (code fence with 'tool_call' lang)
+        fence_pattern = re.compile(
+            r"```tool_call\s*\n(.*?)\n```", re.DOTALL
+        )
+        def replace_fence(m: re.Match) -> str:
+            inner = m.group(1).strip()
+            return f"<tool_call>\n{inner}\n</tool_call>"
+
+        content = fence_pattern.sub(replace_fence, content)
+
+        # Pattern: ```xml\n...\n``` — just strip the fences, keep inner XML
+        xml_fence_pattern = re.compile(r"```xml\s*\n(.*?)\n```", re.DOTALL)
+        content = xml_fence_pattern.sub(lambda m: m.group(1).strip(), content)
+
+        return content
+
+    def _get_model_response(self, openai_messages, *args, **kwargs):
+        """Override to sanitize role alternation for models that require it.
+
+        Only active when ``support_native_tool_calling`` is False
+        (i.e. the model uses simulated tool calling and likely has a
+        strict Jinja chat template that enforces user/assistant
+        alternation, such as MedGemma / GLM-4).
+        """
+        if not self.support_native_tool_calling:
+            before_roles = [m.get("role") for m in openai_messages]
+            openai_messages = self._sanitize_message_roles(openai_messages)
+            after_roles = [m.get("role") for m in openai_messages]
+            logger.debug(
+                f"[SANITIZE-SYNC] Agent {self.agent_name} "
+                f"before={before_roles} after={after_roles}"
+            )
+        return super()._get_model_response(openai_messages, *args, **kwargs)
+
+    async def _aget_model_response(self, openai_messages, *args, **kwargs):
+        """Async override — same sanitization as the sync variant."""
+        if not self.support_native_tool_calling:
+            before_roles = [m.get("role") for m in openai_messages]
+            openai_messages = self._sanitize_message_roles(openai_messages)
+            after_roles = [m.get("role") for m in openai_messages]
+            logger.debug(
+                f"[SANITIZE-ASYNC] Agent {self.agent_name} "
+                f"before={before_roles} after={after_roles}"
+            )
+        return await super()._aget_model_response(
+            openai_messages, *args, **kwargs
+        )
 
     def _send_agent_deactivate(self, message: str, tokens: int) -> None:
         """Send agent deactivation event to the frontend.
@@ -282,6 +436,16 @@ class ListenChatAgent(ChatAgent):
 
         assert message is not None
 
+        # Handle simulated tool calling for models without native support
+        if (
+            not self.support_native_tool_calling
+            and res is not None
+            and not isinstance(res, StreamingChatAgentResponse)
+        ):
+            res = self._handle_simulated_tool_calls(res, input_message)
+            if res.msg:
+                message = res.msg.content
+
         _schedule_async_task(
             task_lock.put_queue(
                 ActionDeactivateAgentData(
@@ -300,6 +464,130 @@ class ListenChatAgent(ChatAgent):
             raise error_info
         assert res is not None
         return res
+
+    def _handle_simulated_tool_calls(
+        self,
+        response: ChatAgentResponse,
+        original_input: BaseMessage | str,
+        max_iterations: int = 5,
+    ) -> ChatAgentResponse:
+        r"""Handle simulated tool calls for models without native tool support.
+
+        This method extracts tool calls from the model's text response using
+        Hermes format, executes them locally, and continues the conversation
+        until no more tool calls are detected.
+
+        Args:
+            response: The initial response from the model.
+            original_input: The original user input.
+            max_iterations: Maximum number of tool call iterations to prevent
+                infinite loops.
+
+        Returns:
+            ChatAgentResponse: The final response after all tool calls are
+                handled.
+        """
+        if self._hermes_formatter is None or response.msg is None:
+            return response
+
+        current_response = response
+        iteration = 0
+
+        while iteration < max_iterations:
+            iteration += 1
+            content = (
+                current_response.msg.content
+                if current_response.msg
+                else ""
+            )
+
+            # Normalize any markdown-fenced tool call variants to canonical
+            # <tool_call> XML tags before extraction.
+            normalized_content = self._normalize_tool_call_format(content)
+
+            # Extract tool calls from the response text
+            tool_calls = self._hermes_formatter.extract_tool_calls(normalized_content)
+
+            if not tool_calls:
+                logger.debug(
+                    f"Agent {self.agent_name} no simulated tool calls found"
+                )
+                break
+
+            logger.info(
+                f"Agent {self.agent_name} found {len(tool_calls)} "
+                f"simulated tool call(s) (iteration {iteration})"
+            )
+
+            # Execute tool calls and build results
+            tool_results = []
+            for tc in tool_calls:
+                tool_name = tc.name
+                tool_args = tc.arguments
+
+                # Find the tool in our registered tools
+                if tool_name in self._internal_tools:
+                    tool = self._internal_tools[tool_name]
+                    try:
+                        # Execute the tool
+                        if asyncio.iscoroutinefunction(tool.func):
+                            result = asyncio.run(tool(**tool_args))
+                        else:
+                            result = tool(**tool_args)
+                        logger.info(
+                            f"Agent {self.agent_name} executed tool "
+                            f"'{tool_name}' with result: {result}"
+                        )
+                    except Exception as e:
+                        result = f"Error executing tool '{tool_name}': {e}"
+                        logger.error(
+                            f"Agent {self.agent_name} tool '{tool_name}' "
+                            f"execution failed: {e}"
+                        )
+                else:
+                    result = f"Error: Tool '{tool_name}' not found"
+                    logger.warning(
+                        f"Agent {self.agent_name} tool '{tool_name}' not found"
+                    )
+
+                tool_results.append(
+                    self._hermes_formatter.format_tool_response(
+                        tool_name, result
+                    )
+                )
+
+            # Prepare follow-up message with tool results.
+            # Remind the model to return the final JSON result now that it
+            # has the tool output.
+            tool_results_text = "\n".join(tool_results)
+            follow_up_message = (
+                f"The tools you called returned these results:\n"
+                f"{tool_results_text}\n\n"
+                f"Based on these results, now return your FINAL answer as a "
+                f"JSON object with exactly two fields:\n"
+                f'- "content" (string): your complete result\n'
+                f'- "failed" (boolean): true only if the task could not be '
+                f"completed\n\n"
+                f"Example: "
+                f'{"{"}"content": "Task completed.", "failed": false{"}"}\n\n'
+                f"CRITICAL: Your entire response must be ONLY the JSON object."
+            )
+
+            # Get the next response from the model
+            # The parent step() will handle memory management properly
+            logger.info(
+                f"Agent {self.agent_name} getting follow-up response "
+                f"after tool execution"
+            )
+            current_response = super().step(follow_up_message)
+
+        if iteration >= max_iterations:
+            logger.warning(
+                f"Agent {self.agent_name} reached max iterations "
+                f"({max_iterations}) for simulated tool calls"
+            )
+
+        return current_response
 
     async def astep(
         self,
@@ -383,6 +671,14 @@ class ListenChatAgent(ChatAgent):
                 f"tokens used: {total_tokens}"
             )
 
+            # Handle simulated tool calling for models without native support
+            if not self.support_native_tool_calling:
+                res = await self._ahandle_simulated_tool_calls(
+                    res, input_message
+                )
+                if res.msg:
+                    message = res.msg.content
+
         # Send deactivation for all non-streaming cases (success or error)
         # Streaming responses handle deactivation in _astream_chunks
         assert message is not None
@@ -405,6 +701,137 @@ class ListenChatAgent(ChatAgent):
             raise error_info
         assert res is not None
         return res
+
+    async def _ahandle_simulated_tool_calls(
+        self,
+        response: ChatAgentResponse,
+        original_input: BaseMessage | str,
+        max_iterations: int = 5,
+    ) -> ChatAgentResponse:
+        r"""Async version of _handle_simulated_tool_calls.
+
+        This method extracts tool calls from the model's text response using
+        Hermes format, executes them locally, and continues the conversation
+        until no more tool calls are detected.
+
+        Args:
+            response: The initial response from the model.
+            original_input: The original user input.
+            max_iterations: Maximum number of tool call iterations to prevent
+                infinite loops.
+
+        Returns:
+            ChatAgentResponse: The final response after all tool calls are
+                handled.
+        """
+        if self._hermes_formatter is None or response.msg is None:
+            return response
+
+        current_response = response
+        iteration = 0
+
+        while iteration < max_iterations:
+            iteration += 1
+            content = (
+                current_response.msg.content
+                if current_response.msg
+                else ""
+            )
+
+            # Normalize any markdown-fenced tool call variants to canonical
+            # <tool_call> XML tags before extraction.
+            normalized_content = self._normalize_tool_call_format(content)
+
+            # Extract tool calls from the response text
+            tool_calls = self._hermes_formatter.extract_tool_calls(normalized_content)
+
+            if not tool_calls:
+                logger.debug(
+                    f"Agent {self.agent_name} no simulated tool calls found"
+                )
+                break
+
+            logger.info(
+                f"Agent {self.agent_name} found {len(tool_calls)} "
+                f"simulated tool call(s) (iteration {iteration})"
+            )
+
+            # Execute tool calls and build results
+            tool_results = []
+            for tc in tool_calls:
+                tool_name = tc.name
+                tool_args = tc.arguments
+
+                # Find the tool in our registered tools
+                if tool_name in self._internal_tools:
+                    tool = self._internal_tools[tool_name]
+                    try:
+                        # Execute the tool via the correct async path to avoid
+                        # the "async tool called synchronously" RuntimeWarning.
+                        # FunctionTool.async_call() is the proper awaitable
+                        # entry-point; fall back to sync call for non-async tools.
+                        if asyncio.iscoroutinefunction(tool.func) or getattr(tool, "is_async", False):
+                            result = await tool.async_call(**tool_args)
+                        else:
+                            result = tool(**tool_args)
+                            if asyncio.iscoroutine(result):
+                                result = await result
+                        logger.info(
+                            f"Agent {self.agent_name} executed tool "
+                            f"'{tool_name}' with result: {result}"
+                        )
+                    except Exception as e:
+                        result = f"Error executing tool '{tool_name}': {e}"
+                        logger.error(
+                            f"Agent {self.agent_name} tool '{tool_name}' "
+                            f"execution failed: {e}"
+                        )
+                else:
+                    result = f"Error: Tool '{tool_name}' not found"
+                    logger.warning(
+                        f"Agent {self.agent_name} tool '{tool_name}' not found"
+                    )
+
+                tool_results.append(
+                    self._hermes_formatter.format_tool_response(
+                        tool_name, result
+                    )
+                )
+
+            # Prepare follow-up message with tool results.
+            # Crucially, remind the model to return the final JSON result
+            # now that it has the tool output — otherwise it may just
+            # describe the results in plain prose.
+            tool_results_text = "\n".join(tool_results)
+            follow_up_message = (
+                f"The tools you called returned these results:\n"
+                f"{tool_results_text}\n\n"
+                f"Based on these results, now return your FINAL answer as a "
+                f"JSON object with exactly two fields:\n"
+                f'- "content" (string): your complete result\n'
+                f'- "failed" (boolean): true only if the task could not be '
+                f"completed\n\n"
+                f"Example: "
+                f'{"{"}"content": "The image shows a chest X-ray with normal '
+                f'lung fields.", "failed": false{"}"}\n\n'
+                f"CRITICAL: Your entire response must be ONLY the JSON object."
+            )
+
+            # Get the next response from the model
+            # The parent astep() will handle memory management properly
+            logger.info(
+                f"Agent {self.agent_name} getting follow-up response "
+                f"after tool execution"
+            )
+            current_response = await super().astep(follow_up_message)
+
+        if iteration >= max_iterations:
+            logger.warning(
+                f"Agent {self.agent_name} reached max iterations "
+                f"({max_iterations}) for simulated tool calls"
+            )
+
+        return current_response
 
     def _execute_tool(
         self, tool_call_request: ToolCallRequest
@@ -718,6 +1145,7 @@ class ListenChatAgent(ChatAgent):
             enable_snapshot_clean=self._enable_snapshot_clean,
             step_timeout=self.step_timeout,
             stream_accumulate=self.stream_accumulate,
+            support_native_tool_calling=self.support_native_tool_calling,
         )
 
         new_agent.process_task_id = self.process_task_id

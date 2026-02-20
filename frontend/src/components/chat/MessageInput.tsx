@@ -1,10 +1,10 @@
-import { useState, type KeyboardEvent } from 'react';
-import { useChat } from '@/hooks';
-import { useTaskStore } from '@/stores';
-import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Send, Square } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { useChat } from '@/hooks';
 import { cn } from '@/lib/utils';
+import { useTaskStore } from '@/stores';
+import { Send, Square } from 'lucide-react';
+import { useState, type KeyboardEvent } from 'react';
 
 // Default model configuration from environment variables
 const DEFAULT_MODEL_PLATFORM = import.meta.env.VITE_DEFAULT_MODEL_PLATFORM || 'GEMINI';
@@ -37,12 +37,13 @@ export function MessageInput() {
       api_url: DEFAULT_MODEL_API_URL,
       language: 'en',
       browser_port: 9222,
-      max_retries: 3,
+      max_retries: 5,
       allow_local_system: false,
       installed_mcp: {},
       bun_mirror: '',
       uvx_mirror: '',
       summary_prompt: '',
+      use_simulated_tool_calling: false,
     });
   };
 

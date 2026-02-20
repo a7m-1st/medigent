@@ -13,7 +13,7 @@ from app.utils.listen.toolkit_listen import auto_listen_toolkit
 
 @auto_listen_toolkit(BaseVideoAnalysisToolkit)
 class VideoAnalysisToolkit(BaseVideoAnalysisToolkit, AbstractToolkit):
-    agent_name: str = Agents.multi_modal_agent
+    agent_name: str = Agents.radiologist
 
     def __init__(
         self,

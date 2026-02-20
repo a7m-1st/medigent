@@ -33,11 +33,37 @@ class QuestionAnalysisResult(BaseModel):
 
 McpServers = dict[Literal["mcpServers"], dict[str, dict]]
 
-PLATFORM_MAPPING = {
-    "Z.ai": "openai-compatible-model",
-    "ModelArk": "openai-compatible-model",
-}
 
+class AgentConfig(BaseModel):
+    """Configuration for a specific agent type (e.g., Gemini 3 or MedGemma 4B).
+    
+    Used for primary_agent (Gemini 3 agents) and secondary_agent (MedGemma 4B agents).
+    Falls back to Chat global config if not provided.
+    """
+    api_url: str | None = None
+    model_type: str | None = None
+    model_platform: str | None = None
+    api_key: str | None = None
+    use_simulated_tool_calling: bool = False
+    
+    def get_effective_config(self, fallback: "AgentConfig") -> "AgentConfig":
+        """Returns a new AgentConfig with fallbacks applied."""
+        return AgentConfig(
+            api_url=self.api_url or fallback.api_url,
+            model_type=self.model_type or fallback.model_type,
+            model_platform=self.model_platform or fallback.model_platform,
+            api_key=self.api_key or fallback.api_key,
+            use_simulated_tool_calling=self.use_simulated_tool_calling or fallback.use_simulated_tool_calling,
+        )
+    
+    def has_custom_config(self) -> bool:
+        """Check if any custom configuration values are set."""
+        return any([
+            self.api_url,
+            self.model_type,
+            self.model_platform,
+            self.api_key,
+        ])
 
 class Chat(BaseModel):
     task_id: str
@@ -64,6 +90,14 @@ class Chat(BaseModel):
     # User-specific search engine configurations
     # (e.g., GOOGLE_API_KEY, SEARCH_ENGINE_ID)
     search_config: dict[str, str] | None = None
+    # Check if we need to use simulated tool calling
+    # This is useful for models that don't support native function calling
+    # like MedGemma, local LLMs, or other open-source models
+    use_simulated_tool_calling: bool = False
+    # Medical workforce model configurations
+    # secondary_agent: For MedGemma 4B agents (Radiologist, Attending Physician, Clinical Pharmacologist)
+    # Falls back to Chat global config if not provided
+    secondary_agent: AgentConfig | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -83,12 +117,16 @@ class Chat(BaseModel):
                 env_url = os.getenv("API_URL", "")
                 if env_url:
                     data["api_url"] = env_url
+            
+            # Set default secondary_agent (MedGemma) configuration if not provided
+            if not data.get("secondary_agent"):
+                data["secondary_agent"] = {
+                    "api_url": os.getenv("MEDGEMMA_API_URL", "https://med.awelkaircodes.org/v1"),
+                    "model_platform": os.getenv("MEDGEMMA_MODEL_PLATFORM", "openai-compatible-model"),
+                    "model_type": os.getenv("MEDGEMMA_MODEL_TYPE", "medgemma-4b"),
+                    "use_simulated_tool_calling": True
+                }
         return data
-
-    @field_validator("model_platform")
-    @classmethod
-    def map_model_platform(cls, v: str) -> str:
-        return PLATFORM_MAPPING.get(v, v)
 
     @field_validator("model_type")
     @classmethod

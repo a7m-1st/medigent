@@ -421,7 +421,7 @@ websocket_connection_pool = WebSocketConnectionPool()
 
 @auto_listen_toolkit(BaseHybridBrowserToolkit)
 class HybridBrowserToolkit(BaseHybridBrowserToolkit, AbstractToolkit):
-    agent_name: str = Agents.browser_agent
+    agent_name: str = Agents.clinical_researcher
 
     def __init__(
         self,

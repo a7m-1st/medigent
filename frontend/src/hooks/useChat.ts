@@ -265,7 +265,7 @@ export function useChat(): UseChatReturn {
         api_url: config?.api_url ?? DEFAULT_MODEL_API_URL,
         language: config?.language || 'en',
         browser_port: config?.browser_port || 9222,
-        max_retries: config?.max_retries || 3,
+        max_retries: config?.max_retries || 5,
         allow_local_system: config?.allow_local_system ?? false,
         installed_mcp: config?.installed_mcp || { mcpServers: {} },
         bun_mirror: config?.bun_mirror || '',
@@ -274,6 +274,7 @@ export function useChat(): UseChatReturn {
         summary_prompt: config?.summary_prompt || '',
         extra_params: config?.extra_params ?? null,
         search_config: config?.search_config ?? null,
+        use_simulated_tool_calling: false //update this if using medgemma as main model
       };
       await startChat(chatData);
     },
