@@ -202,6 +202,7 @@ After calling a tool, you will receive the result and should continue the conver
             tools=tools,  # Pass tools for local execution
             agent_id=agent_id,
             token_limit=resolved_context_size or None,
+            summarize_threshold=90,  # Trigger summarization at 90% of token_limit (~14.7k for 16384 context)
             prune_tool_calls_from_memory=prune_tool_calls_from_memory,
             toolkits_to_register_agent=toolkits_to_register_agent,
             enable_snapshot_clean=enable_snapshot_clean,
@@ -217,6 +218,7 @@ After calling a tool, you will receive the result and should continue the conver
         tools=tools,
         agent_id=agent_id,
         token_limit=resolved_context_size or None,
+        summarize_threshold=90,  # Trigger summarization at 90% of token_limit
         prune_tool_calls_from_memory=prune_tool_calls_from_memory,
         toolkits_to_register_agent=toolkits_to_register_agent,
         enable_snapshot_clean=enable_snapshot_clean,

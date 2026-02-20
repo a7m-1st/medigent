@@ -56,7 +56,7 @@ You MUST use tools to coordinate work. Follow these steps:
 
 STEP 1: Record the initial patient intake assessment.
 <tool_call>
-{{"name": "create_note", "arguments": {{"title": "patient_intake", "content": "## Patient Intake\\n\\n### Chief Complaint\\n[Patient's primary concern]\\n\\n### History\\n[Relevant history from the case]\\n\\n### Current Presentation\\n[Symptoms, vitals, etc.]"}}}}
+{{"name": "create_note", "arguments": {{"note_name": "patient_intake", "content": "## Patient Intake\\n\\n### Chief Complaint\\n[Patient's primary concern]\\n\\n### History\\n[Relevant history from the case]\\n\\n### Current Presentation\\n[Symptoms, vitals, etc.]"}}}}
 </tool_call>
 
 STEP 2: Periodically check on specialist progress.
@@ -66,7 +66,7 @@ STEP 2: Periodically check on specialist progress.
 
 STEP 3: Read specialist findings as they become available.
 <tool_call>
-{{"name": "read_note", "arguments": {{"title": "radiology_findings"}}}}
+{{"name": "read_note", "arguments": {{"note_name": "radiology_findings"}}}}
 </tool_call>
 </critical_workflow>
 
@@ -111,7 +111,7 @@ STEP 1: Check what notes exist from other agents to understand the case.
 
 STEP 2: Read available patient information.
 <tool_call>
-{{"name": "read_note", "arguments": {{"title": "patient_intake"}}}}
+{{"name": "read_note", "arguments": {{"note_name": "patient_intake"}}}}
 </tool_call>
 
 STEP 3: Search medical literature for relevant evidence.
@@ -121,7 +121,7 @@ STEP 3: Search medical literature for relevant evidence.
 
 STEP 4: MANDATORY - Save your research findings as a note.
 <tool_call>
-{{"name": "create_note", "arguments": {{"title": "research_evidence", "content": "## Research Evidence\\n\\n### Key Findings\\n...\\n\\n### Clinical Guidelines\\n...\\n\\n### References\\n..."}}}}
+{{"name": "create_note", "arguments": {{"note_name": "research_evidence", "content": "## Research Evidence\\n\\n### Key Findings\\n...\\n\\n### Clinical Guidelines\\n...\\n\\n### References\\n..."}}}}
 </tool_call>
 </critical_workflow>
 
@@ -165,19 +165,19 @@ STEP 1: Discover all available notes from other specialists.
 
 STEP 2: Read ALL available notes. Try each one - if it does not exist, move on.
 <tool_call>
-{{"name": "read_note", "arguments": {{"title": "patient_intake"}}}}
+{{"name": "read_note", "arguments": {{"note_name": "patient_intake"}}}}
 </tool_call>
 <tool_call>
-{{"name": "read_note", "arguments": {{"title": "radiology_findings"}}}}
+{{"name": "read_note", "arguments": {{"note_name": "radiology_findings"}}}}
 </tool_call>
 <tool_call>
-{{"name": "read_note", "arguments": {{"title": "diagnosis_plan"}}}}
+{{"name": "read_note", "arguments": {{"note_name": "diagnosis_plan"}}}}
 </tool_call>
 <tool_call>
-{{"name": "read_note", "arguments": {{"title": "medication_recommendations"}}}}
+{{"name": "read_note", "arguments": {{"note_name": "medication_recommendations"}}}}
 </tool_call>
 <tool_call>
-{{"name": "read_note", "arguments": {{"title": "research_evidence"}}}}
+{{"name": "read_note", "arguments": {{"note_name": "research_evidence"}}}}
 </tool_call>
 
 STEP 3: Create the comprehensive medical report file.
@@ -185,12 +185,12 @@ Use the FileToolkit to create the report document.
 
 STEP 4: MANDATORY - Register the report in notes.
 <tool_call>
-{{"name": "create_note", "arguments": {{"title": "final_report", "content": "## Final Medical Report\\n\\nReport generated and saved to: [file path]\\n\\nIncludes findings from: [list agents whose notes were available]"}}}}
+{{"name": "create_note", "arguments": {{"note_name": "final_report", "content": "## Final Medical Report\\n\\nReport generated and saved to: [file path]\\n\\nIncludes findings from: [list agents whose notes were available]"}}}}
 </tool_call>
 
 STEP 5: Register any files created.
 <tool_call>
-{{"name": "append_note", "arguments": {{"title": "shared_files", "content": "- [file_path]: Complete medical diagnostic report"}}}}
+{{"name": "append_note", "arguments": {{"note_name": "shared_files", "content": "- [file_path]: Complete medical diagnostic report"}}}}
 </tool_call>
 </critical_workflow>
 
@@ -243,7 +243,7 @@ STEP 2: Ask a focused clinical question about the image.
 
 STEP 3: MANDATORY - Save your findings as a note so other team members can access them.
 <tool_call>
-{{"name": "create_note", "arguments": {{"title": "radiology_findings", "content": "## Radiological Report\\n\\n### Findings\\n[Your detailed findings here]\\n\\n### Diagnostic Impression\\n[Your impression]\\n\\n### Recommendations\\n[Your recommendations]"}}}}
+{{"name": "create_note", "arguments": {{"note_name": "radiology_findings", "content": "## Radiological Report\\n\\n### Findings\\n[Your detailed findings here]\\n\\n### Diagnostic Impression\\n[Your impression]\\n\\n### Recommendations\\n[Your recommendations]"}}}}
 </tool_call>
 </critical_workflow>
 
@@ -303,15 +303,15 @@ STEP 1: Check what notes exist from other specialists.
 
 STEP 2: Read ANY available notes. Try each one - if it does not exist, move on.
 <tool_call>
-{{"name": "read_note", "arguments": {{"title": "patient_intake"}}}}
+{{"name": "read_note", "arguments": {{"note_name": "patient_intake"}}}}
 </tool_call>
 <tool_call>
-{{"name": "read_note", "arguments": {{"title": "radiology_findings"}}}}
+{{"name": "read_note", "arguments": {{"note_name": "radiology_findings"}}}}
 </tool_call>
 
 STEP 3: AFTER reading available notes (or if none exist), create your diagnosis based on ALL information available to you - including the patient data in the task description itself.
 <tool_call>
-{{"name": "create_note", "arguments": {{"title": "diagnosis_plan", "content": "## Clinical Assessment\\n\\n### Problem List\\n1. ...\\n\\n### Differential Diagnosis\\n..."}}}}
+{{"name": "create_note", "arguments": {{"note_name": "diagnosis_plan", "content": "## Clinical Assessment\\n\\n### Problem List\\n1. ...\\n\\n### Differential Diagnosis\\n..."}}}}
 </tool_call>
 </critical_workflow>
 
@@ -383,10 +383,10 @@ STEP 1: Check what notes exist from other specialists.
 
 STEP 2: Read available patient information and diagnosis.
 <tool_call>
-{{"name": "read_note", "arguments": {{"title": "patient_intake"}}}}
+{{"name": "read_note", "arguments": {{"note_name": "patient_intake"}}}}
 </tool_call>
 <tool_call>
-{{"name": "read_note", "arguments": {{"title": "diagnosis_plan"}}}}
+{{"name": "read_note", "arguments": {{"note_name": "diagnosis_plan"}}}}
 </tool_call>
 
 STEP 3: If needed, search for drug information.
@@ -396,7 +396,7 @@ STEP 3: If needed, search for drug information.
 
 STEP 4: MANDATORY - Save your medication recommendations as a note.
 <tool_call>
-{{"name": "create_note", "arguments": {{"title": "medication_recommendations", "content": "## Medication Recommendations\\n\\n### Primary Therapy\\n..."}}}}
+{{"name": "create_note", "arguments": {{"note_name": "medication_recommendations", "content": "## Medication Recommendations\\n\\n### Primary Therapy\\n..."}}}}
 </tool_call>
 </critical_workflow>
 
