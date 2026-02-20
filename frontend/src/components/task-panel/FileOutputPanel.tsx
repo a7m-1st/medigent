@@ -1,18 +1,18 @@
-import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api';
-import { useChatStore } from '@/stores/chatStore';
 import { cn } from '@/lib/utils';
-import { 
-  File, 
-  FileText, 
-  Image as ImageIcon, 
-  FileJson, 
-  Trash2, 
-  Download, 
-  RefreshCw,
+import { useChatStore } from '@/stores/chatStore';
+import {
+  Download,
+  File,
+  FileJson,
+  FileText,
+  FileType,
   FolderOpen,
-  FileType
+  Image as ImageIcon,
+  RefreshCw,
+  Trash2
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 interface ProjectFile {
   name: string;
@@ -188,7 +188,7 @@ export const FileOutputPanel: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-medium">Generated Files</h3>
+          <h3 className="text-sm font-medium">Project Files</h3>
           <span className="text-xs text-foreground-muted">({files.length})</span>
         </div>
         <button
