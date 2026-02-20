@@ -74,7 +74,7 @@ const EmptyState: React.FC = () => {
 
       {/* Title */}
       <h1 className="text-2xl font-semibold text-foreground mb-2 tracking-tight">
-        MedGemma
+        MedCrew
       </h1>
 
       {/* Subtitle */}

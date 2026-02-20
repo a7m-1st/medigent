@@ -91,7 +91,7 @@ export const DashboardPage: React.FC = () => {
         <header className="h-14 border-b border-border bg-background/80 backdrop-blur-md flex items-center justify-between px-6 z-30 shrink-0">
           <div className="flex items-center gap-4">
             <h2 className="text-sm font-bold tracking-tight text-foreground-secondary">
-              MEDGEMMA <span className="text-accent">v2.0</span>
+              MedCrew
             </h2>
             <div className="h-4 w-px bg-border" />
             <div className="flex items-center gap-2">

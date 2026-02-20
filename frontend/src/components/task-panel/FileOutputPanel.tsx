@@ -13,6 +13,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 
 interface ProjectFile {
   name: string;
@@ -107,12 +108,10 @@ export const FileOutputPanel: React.FC = () => {
     setSelectedFile(file);
     setViewMode('preview');
     
-    // For images, show inline. For others, trigger download
     const ext = file.name.split('.').pop()?.toLowerCase();
     const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'];
     
     if (imageExts.includes(ext || '')) {
-      // For images, fetch and display
       try {
         const response = await apiClient.get(
           `/projects/${currentProjectId}/files/${encodeURIComponent(file.path)}`,
@@ -124,8 +123,18 @@ export const FileOutputPanel: React.FC = () => {
         console.error('Failed to load image:', err);
         setFileContent(null);
       }
+    } else if (ext === 'md') {
+      try {
+        const response = await apiClient.get(
+          `/projects/${currentProjectId}/files/${encodeURIComponent(file.path)}`,
+          { responseType: 'text' }
+        );
+        setFileContent(response.data);
+      } catch (err) {
+        console.error('Failed to load markdown:', err);
+        setFileContent(null);
+      }
     } else {
-      // For non-images, just show filename info
       setFileContent(null);
     }
   };
@@ -314,6 +323,10 @@ export const FileOutputPanel: React.FC = () => {
                   alt={selectedFile.name} 
                   className="max-w-full h-auto"
                 />
+              ) : selectedFile.name.match(/\.md$/i) && fileContent ? (
+                <div className="markdown-content text-sm">
+                  <ReactMarkdown>{fileContent}</ReactMarkdown>
+                </div>
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-foreground-muted">
                   <File className="w-16 h-16 mb-2 opacity-30" />

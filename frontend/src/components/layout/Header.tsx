@@ -37,7 +37,7 @@ export function Header() {
     <header className="h-16 border-b border-border bg-card flex items-center justify-between px-4 shrink-0">
       <div className="flex items-center gap-4">
         <h1 className="text-xl font-bold text-foreground">
-          MedGemma Team
+          MedCrew
         </h1>
       </div>
 
