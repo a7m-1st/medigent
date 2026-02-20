@@ -7,6 +7,7 @@ import {
   useTaskDecompStore,
 } from '@/stores';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
+import { useProjectStore } from '@/stores/projectStore';
 import type {
   Chat,
   ChatMessage,
@@ -265,9 +266,21 @@ export function useChat(): UseChatReturn {
             model_context_size: medgemmaContextSize ?? undefined,
           }
         : config?.secondary_agent;
+
+      const newTaskId = taskId || `task-${Date.now()}`;
+      const newProjectId = projectId || `project-${Date.now()}`;
+
+      // Auto-create project in projectStore if it doesn't exist yet
+      const projectStore = useProjectStore.getState();
+      if (!projectStore.getProjectById(newProjectId)) {
+        projectStore.createProject(newProjectId);
+      }
+      // Track the taskId in the project
+      projectStore.addTaskToProject(newProjectId, newTaskId);
+
       const chatData: Chat = {
-        task_id: taskId || `task-${Date.now()}`,
-        project_id: projectId || `project-${Date.now()}`,
+        task_id: newTaskId,
+        project_id: newProjectId,
         question,
         attaches: attaches || [],
         model_platform: config?.model_platform || DEFAULT_MODEL_PLATFORM,

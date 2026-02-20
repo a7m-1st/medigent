@@ -3,9 +3,11 @@ import { useChat } from '@/hooks/useChat';
 import { cn } from '@/lib/utils';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { useChatStore } from '@/stores/chatStore';
+import { useProjectStore } from '@/stores/projectStore';
 import { AnimatePresence, motion } from 'framer-motion';
-import { FileText, Paperclip, PauseCircle, Send, Upload, X } from 'lucide-react';
+import { AlertTriangle, Camera, FileText, Paperclip, PauseCircle, Send, Upload, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 // Default model configuration from environment variables
 const DEFAULT_MODEL_PLATFORM = import.meta.env.VITE_DEFAULT_MODEL_PLATFORM || 'GEMINI';
@@ -21,13 +23,17 @@ interface AttachedFile {
 const MOBILE_BREAKPOINT = 768;
 
 export const TaskInputPanel: React.FC = () => {
+  const navigate = useNavigate();
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState<AttachedFile[]>([]);
   const [isFocused, setIsFocused] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [showMobileAttachMenu, setShowMobileAttachMenu] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   // Handle responsive layout
   useEffect(() => {
@@ -40,6 +46,20 @@ export const TaskInputPanel: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Close mobile menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target as Node)) {
+        setShowMobileAttachMenu(false);
+      }
+    };
+
+    if (showMobileAttachMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showMobileAttachMenu]);
+
   const { sendMessage, sendHumanReply, stopChat, isLoading, isStreaming } = useChat();
   const { geminiApiKey, backendHasApiKey } = useApiConfigStore();
   const wasStopped = useChatStore((state) => state.wasStopped);
@@ -51,6 +71,14 @@ export const TaskInputPanel: React.FC = () => {
   const isProcessing = (isStreaming || isLoading) && !wasStopped && !waitingForHumanReply;
   const hasContent = message.trim() || attachments.length > 0;
   const canSend = hasContent && (!isProcessing || waitingForHumanReply);
+
+  // Project-aware: check if there are prior persisted messages for the disclaimer
+  const currentProjectId = useChatStore((state) => state.currentProjectId);
+  const projectFromStore = useProjectStore((s) =>
+    currentProjectId ? s.projects.find((p) => p.id === currentProjectId) : undefined
+  );
+  const hasPriorMessages = (projectFromStore?.messages?.length ?? 0) > 0 && !isStreaming;
+  const showDisclaimer = hasPriorMessages && message.trim().length > 0;
 
   // Process files (from input or drag & drop)
   const processFiles = useCallback((files: FileList | File[]) => {
@@ -76,13 +104,32 @@ export const TaskInputPanel: React.FC = () => {
     });
   }, []);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
       processFiles(files);
     }
     // Reset input so same file can be selected again
     e.target.value = '';
+    setShowMobileAttachMenu(false);
+  };
+
+  const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) {
+      processFiles(files);
+    }
+    // Reset input so same file can be selected again
+    e.target.value = '';
+    setShowMobileAttachMenu(false);
+  };
+
+  const handleAttachClick = () => {
+    if (isMobile) {
+      setShowMobileAttachMenu(!showMobileAttachMenu);
+    } else {
+      fileInputRef.current?.click();
+    }
   };
 
   const removeAttachment = (index: number) => {
@@ -133,13 +180,18 @@ export const TaskInputPanel: React.FC = () => {
       setMessage('');
       setAttachments([]);
 
-      // Add user message to chat immediately
-      useChatStore.getState().addMessage({
+      // Add user message to chat immediately and persist to project
+      const userMsg: import('@/types').ChatMessage = {
         id: `user-${Date.now()}`,
         role: 'user',
         content: currentMessage,
         timestamp: new Date().toISOString(),
-      });
+      };
+      useChatStore.getState().addMessage(userMsg);
+      const pid = useChatStore.getState().currentProjectId;
+      if (pid) {
+        useProjectStore.getState().addMessageToProject(pid, userMsg);
+      }
 
       // Clear the waiting state
       setWaitingForHumanReply(false, null);
@@ -170,14 +222,19 @@ export const TaskInputPanel: React.FC = () => {
       setMessage('');
       setAttachments([]);
 
-      // Add user message to chat immediately (with attachments)
-      useChatStore.getState().addMessage({
+      // Add user message to chat immediately (with attachments) and persist to project
+      const userMsg: import('@/types').ChatMessage = {
         id: `user-${Date.now()}`,
         role: 'user',
         content: currentMessage,
         timestamp: new Date().toISOString(),
         images: currentAttachments.length > 0 ? currentAttachments.map(a => a.data) : undefined,
-      });
+      };
+      useChatStore.getState().addMessage(userMsg);
+      const existingProjectId = useChatStore.getState().currentProjectId;
+      if (existingProjectId) {
+        useProjectStore.getState().addMessageToProject(existingProjectId, userMsg);
+      }
 
       try {
         console.log('Sending message:', currentMessage);
@@ -203,6 +260,12 @@ export const TaskInputPanel: React.FC = () => {
         });
 
         console.log('Message sent successfully');
+
+        // If this was a new chat (no existing project), navigate to project page
+        const newProjectId = useChatStore.getState().currentProjectId;
+        if (!existingProjectId && newProjectId) {
+          navigate(`/project/${newProjectId}`);
+        }
       } catch (error) {
         console.error('Failed to send:', error);
         // Restore input on error so user can retry
@@ -314,25 +377,72 @@ export const TaskInputPanel: React.FC = () => {
         )}
       </AnimatePresence>
 
+
+
       {/* Input Area */}
-      <div className="flex-1 flex items-center gap-3 p-4">
+      <div className="flex-1 flex items-center gap-3 p-4 relative">
+        {/* File input for desktop and Files option */}
         <input
           type="file"
           accept="image/*,.pdf"
           multiple
           className="hidden"
           ref={fileInputRef}
-          onChange={handleImageUpload}
+          onChange={handleFileUpload}
         />
+        
+        {/* Camera input for mobile camera option */}
+        <input
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          ref={cameraInputRef}
+          onChange={handleCameraCapture}
+        />
+
+        {/* Mobile Attachment Menu */}
+        {isMobile && showMobileAttachMenu && (
+          <div
+            ref={mobileMenuRef}
+            className="absolute bottom-full left-4 mb-2 bg-card border border-border rounded-xl shadow-lg p-2 z-50 min-w-[140px]"
+          >
+            <button
+              onClick={() => {
+                cameraInputRef.current?.click();
+                setShowMobileAttachMenu(false);
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-accent/10 transition-colors text-left"
+            >
+              <div className="p-1.5 rounded-lg bg-accent/10 text-accent shrink-0">
+                <Camera className="w-4 h-4" />
+              </div>
+              <span className="text-sm text-foreground">Camera</span>
+            </button>
+            <button
+              onClick={() => {
+                fileInputRef.current?.click();
+                setShowMobileAttachMenu(false);
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-accent/10 transition-colors text-left mt-1"
+            >
+              <div className="p-1.5 rounded-lg bg-accent/10 text-accent shrink-0">
+                <FileText className="w-4 h-4" />
+              </div>
+              <span className="text-sm text-foreground">Files</span>
+            </button>
+          </div>
+        )}
 
         <Button
           variant="ghost"
           size="icon"
           className={cn(
             "w-10 h-10 rounded-xl shrink-0 transition-colors",
-            "text-foreground-muted hover:text-accent hover:bg-accent-light"
+            "text-foreground-muted hover:text-accent hover:bg-accent-light",
+            showMobileAttachMenu && "text-accent bg-accent-light"
           )}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={handleAttachClick}
           disabled={isProcessing}
         >
           <Paperclip className="w-5 h-5" />
@@ -352,6 +462,19 @@ export const TaskInputPanel: React.FC = () => {
             onKeyDown={handleKeyDown}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
+            onPaste={(e) => {
+              const clipboardData = e.clipboardData;
+              if (clipboardData && clipboardData.items) {
+                for (let i = 0; i < clipboardData.items.length; i++) {
+                  const item = clipboardData.items[i];
+                  if (item.type.startsWith('image/')) {
+                    e.preventDefault();
+                    alert('Cannot read clipboard: this model does not support image input. Please use the attachment button to upload images.');
+                    return;
+                  }
+                }
+              }
+            }}
             placeholder={waitingForHumanReply && currentAskAgent
               ? `Reply to ${currentAskAgent}...`
               : "Enter your task or question..."
@@ -403,11 +526,23 @@ export const TaskInputPanel: React.FC = () => {
         "px-4 pb-3 flex items-center justify-center gap-4 text-[10px] text-foreground-muted font-medium uppercase tracking-widest",
         isMobile && "hidden"
       )}>
-        <span>Gemini 3 Flash</span>
+        <span>Gemini 3 Flash + Medgemma</span>
         <span className="w-1 h-1 rounded-full bg-border" />
         <span>Multi-Agent System</span>
         <span className="w-1 h-1 rounded-full bg-border" />
-        <span>Encrypted</span>
+        <span>Online</span>
+        {showDisclaimer && (
+          <>
+            <span className="w-1 h-1 rounded-full bg-border" />
+            <span
+              title="Resuming a previous project. The backend doesn't maintain memory between turns, but your chat history is saved locally."
+              className="flex items-center gap-1 text-amber-500 cursor-help normal-case tracking-normal"
+            >
+              <AlertTriangle className="w-3 h-3" />
+              <span>Memory not supported</span>
+            </span>
+          </>
+        )}
       </div>
     </div>
   );

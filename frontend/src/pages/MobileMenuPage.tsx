@@ -1,24 +1,30 @@
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useUIStore } from '@/stores';
+import { useAgentStatusStore, useChatStore, useResourceStore, useTaskDecompStore, useUIStore } from '@/stores';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
 import {
   ArrowLeft,
+  HelpCircle,
   History,
   LayoutDashboard,
   Monitor,
   Moon,
-  HelpCircle,
+  PanelRightOpen,
   Settings,
   Sun,
-  PanelRightOpen,
 } from 'lucide-react';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 export const MobileMenuPage: React.FC = () => {
   const navigate = useNavigate();
   const { theme, setTheme, resolvedTheme } = useUIStore();
+  const { isConfigured, checkBackendConfig } = useApiConfigStore();
+
+  // Check backend config on mount
+  useEffect(() => {
+    checkBackendConfig();
+  }, [checkBackendConfig]);
 
   // Cycle through themes: light -> dark -> system
   const cycleTheme = () => {
@@ -35,13 +41,19 @@ export const MobileMenuPage: React.FC = () => {
       icon: <LayoutDashboard className="w-5 h-5" />,
       label: 'Home',
       description: 'Return to dashboard',
-      onClick: () => navigate('/'),
+      onClick: () => {
+        useChatStore.getState().reset();
+        useAgentStatusStore.getState().reset();
+        useTaskDecompStore.getState().reset();
+        useResourceStore.getState().reset();
+        navigate('/');
+      },
     },
     {
       icon: <History className="w-5 h-5" />,
       label: 'History',
       description: 'View conversation history',
-      onClick: () => navigate('/'),
+      onClick: () => navigate('/history'),
     },
     {
       icon: <PanelRightOpen className="w-5 h-5" />,
@@ -51,7 +63,7 @@ export const MobileMenuPage: React.FC = () => {
     },
     {
       icon: <Settings className="w-5 h-5" />,
-      label: 'Clear API Key',
+      label: 'Configure API Key',
       description: 'Reset your API configuration',
       onClick: () => {
         useApiConfigStore.getState().clearApiKey();
@@ -116,16 +128,27 @@ export const MobileMenuPage: React.FC = () => {
           </div>
 
           {/* System Status */}
-          <div className="mt-8 p-4 rounded-xl bg-accent/10 border border-accent/20">
+          <div className={`mt-8 p-4 rounded-xl border ${isConfigured ? 'bg-accent/10 border-accent/20' : 'bg-warning/10 border-warning/20'}`}>
             <div className="flex items-center gap-3">
               <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-success"></span>
+                {isConfigured ? (
+                  <>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-success"></span>
+                  </>
+                ) : (
+                  <>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-warning opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-warning"></span>
+                  </>
+                )}
               </span>
               <div>
-                <p className="font-medium text-foreground">System Ready</p>
+                <p className="font-medium text-foreground">
+                  {isConfigured ? 'System Ready' : 'API Key Required'}
+                </p>
                 <p className="text-sm text-foreground-muted">
-                  All services operational
+                  {isConfigured ? 'All services operational' : 'Configure your API key to start'}
                 </p>
               </div>
             </div>
