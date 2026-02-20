@@ -143,7 +143,7 @@ export const TaskInputPanel: React.FC = () => {
       // Check if API key is configured (frontend or backend)
       if (!geminiApiKey && !backendHasApiKey) {
         console.error('No API key configured!');
-        alert('Please enter your Gemini API key in the settings, or configure it in the backend .env file.');
+        alert('Please enter your Gemini API key in the settings.');
         return;
       }
 
