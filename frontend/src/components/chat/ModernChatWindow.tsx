@@ -23,6 +23,7 @@ export const ModernChatWindow: React.FC = () => {
     isLoading,
     streamingContent,
     sendMessage,
+    sendHumanReply,
   } = useChat();
   
   const [localMessages, setLocalMessages] = React.useState<LocalMessage[]>([]);
@@ -47,6 +48,9 @@ export const ModernChatWindow: React.FC = () => {
   }, [localMessages, streamingContent]);
 
   const setWasStopped = useChatStore((state) => state.setWasStopped);
+  const waitingForHumanReply = useChatStore((state) => state.waitingForHumanReply);
+  const currentAskAgent = useChatStore((state) => state.currentAskAgent);
+  const setWaitingForHumanReply = useChatStore((state) => state.setWaitingForHumanReply);
 
   const handleSendMessage = async (text: string, images: string[]) => {
     // Reset wasStopped flag at the start of a new send operation
@@ -64,6 +68,26 @@ export const ModernChatWindow: React.FC = () => {
     
     // Use sendMessage which automatically detects whether to use continueChat (improve) or startChat
     await sendMessage(text, images.length > 0 ? images : []);
+  };
+
+  const handleSendHumanReply = async (agent: string, reply: string) => {
+    if (!currentAskAgent || !waitingForHumanReply) return;
+    
+    // Add the reply as a user message locally
+    const newMessage: LocalMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: reply,
+      timestamp: new Date(),
+    };
+    
+    setLocalMessages(prev => [...prev, newMessage]);
+    
+    // Clear the waiting state immediately for better UX
+    setWaitingForHumanReply(false, null);
+    
+    // Send the reply to the backend
+    await sendHumanReply(agent, reply);
   };
 
   const isProcessing = isStreaming || isLoading;
@@ -108,7 +132,13 @@ export const ModernChatWindow: React.FC = () => {
 
       {/* Input Area - fixed at bottom */}
       <div className="border-t border-white/5 bg-zinc-950 p-3">
-        <ModernMessageInput onSendMessage={handleSendMessage} isLoading={isProcessing} />
+        <ModernMessageInput 
+          onSendMessage={handleSendMessage} 
+          onSendHumanReply={handleSendHumanReply}
+          isLoading={isProcessing}
+          waitingForHumanReply={waitingForHumanReply}
+          currentAskAgent={currentAskAgent}
+        />
       </div>
     </div>
   );

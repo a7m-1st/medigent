@@ -40,7 +40,7 @@ function isMainAgent(name: string): boolean {
  * 
  * KEY DESIGN DECISION: The backend uses different agent_ids across different events
  * for the same agent. For example, create_agent might assign id "431ef789..." but
- * activate_agent uses id "b9acbcd8..." for the same document_agent. The agent_name
+ * activate_agent uses id "b9acbcd8..." for the same clinical_researcher. The agent_name
  * is the ONLY consistent identifier, so all lookups go through agent_name.
  */
 export function useSSEHandler() {
@@ -295,11 +295,11 @@ export function useSSEHandler() {
         data.data
       );
     } else {
-      // Fallback: add to developer_agent since terminal is typically from that agent
+      // Fallback: add to medical_scribe since terminal output is typically from that agent
       resourceStore.addTerminalOutput(
-        'developer_agent',
+        'medical_scribe',
         data.process_task_id,
-        'Developer Agent',
+        'Medical Scribe',
         data.data
       );
     }
@@ -335,15 +335,23 @@ export function useSSEHandler() {
   }
 
   function handleAsk(data: SSEAskEvent['data']) {
+    // Set state to indicate we're waiting for human reply
+    chatStore.setWaitingForHumanReply(true, data.agent);
+    // Clear loading state so user can interact with the input
+    chatStore.setLoading(false);
+    
     chatStore.addMessage({
       id: `ask-${Date.now()}`,
       role: 'assistant',
-      content: `Question from ${data.agent}: ${data.question}`,
+      content: `**${data.agent}** is asking:\n\n${data.question}`,
       timestamp: new Date().toISOString(),
     });
   }
 
   function handleEnd(data: SSEEndEvent['data']) {
+    // Clear any pending human reply state when task ends
+    chatStore.setWaitingForHumanReply(false, null);
+    
     taskStore.setFinalSummary(data);
 
     chatStore.addMessage({
@@ -384,6 +392,8 @@ export function useSSEHandler() {
       // For non-rate-limit errors, we might want to stop
       chatStore.setStreaming(false);
       chatStore.setLoading(false);
+      // Clear any pending human reply state on error
+      chatStore.setWaitingForHumanReply(false, null);
 
       // Cancel all pending tasks and mark working agents as error
       // Use getState() to get fresh state

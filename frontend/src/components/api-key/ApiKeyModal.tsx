@@ -15,6 +15,7 @@ import { Key, ShieldCheck } from 'lucide-react';
 export const ApiKeyModal: React.FC = () => {
   const { setApiKey, loadFromStorage, isModalOpen, setModalOpen } = useApiConfigStore();
   const [key, setKey] = useState('');
+  const [medgemmaUrl, setMedgemmaUrl] = useState('');
 
   useEffect(() => {
     loadFromStorage();
@@ -23,7 +24,7 @@ export const ApiKeyModal: React.FC = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (key.trim()) {
-      setApiKey(key.trim());
+      setApiKey(key.trim(), medgemmaUrl.trim() || undefined);
     }
   };
 
@@ -50,6 +51,13 @@ export const ApiKeyModal: React.FC = () => {
               onChange={(e) => setKey(e.target.value)}
               className="bg-input border-input-border text-foreground focus:ring-accent"
               autoFocus
+            />
+            <Input
+              type="url"
+              placeholder="Enter MedGemma host URL (uses our endpoint by default)"
+              value={medgemmaUrl}
+              onChange={(e) => setMedgemmaUrl(e.target.value)}
+              className="bg-input border-input-border text-foreground focus:ring-accent mt-2"
             />
           </div>
           <DialogFooter className="sm:justify-center">

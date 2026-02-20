@@ -1,9 +1,12 @@
+
+import json
 import logging
 import uuid
 from collections.abc import Callable
 from typing import Any
 
 from camel.messages import BaseMessage
+from camel.messages.conversion.sharegpt.hermes import HermesFunctionFormatter
 from camel.models import ModelFactory
 from camel.toolkits import FunctionTool, RegisteredAgentToolkit
 from camel.types import ModelPlatformType
@@ -24,6 +27,7 @@ def agent_model(
     toolkits_to_register_agent: list[RegisteredAgentToolkit] | None = None,
     enable_snapshot_clean: bool = False,
     custom_model_config: AgentModelConfig | None = None,
+    support_native_tool_calling: bool = True,
 ):
     task_lock = get_task_lock(options.project_id)
     agent_id = str(uuid.uuid4())
@@ -97,7 +101,7 @@ def agent_model(
 
     if agent_name == Agents.task_agent:
         model_config["stream"] = True
-    if agent_name == Agents.browser_agent:
+    if agent_name == Agents.clinical_researcher:
         try:
             model_platform_enum = ModelPlatformType(
                 effective_config["model_platform"].lower()
@@ -132,6 +136,66 @@ def agent_model(
         **init_params,
     )
 
+    # Handle simulated tool calling for models without native support
+    if not support_native_tool_calling and tools:
+        logger.info(
+            f"Agent {agent_name} using simulated tool calling (Hermes format)"
+        )
+        # Build tool descriptions for the system message
+        tool_descriptions = []
+        for tool in tools:
+            if isinstance(tool, FunctionTool):
+                schema = tool.get_openai_tool_schema()
+                func = schema["function"]
+                tool_descriptions.append({
+                    "name": func["name"],
+                    "description": func["description"],
+                    "parameters": func["parameters"]
+                })
+
+        # Build tool instructions
+        tool_instructions = f"""
+
+You have access to the following tools:
+{json.dumps(tool_descriptions, indent=2)}
+
+When you need to use a tool, format your response like this:
+<tool_call>
+{{"name": "tool_name", "arguments": {{"param1": "value1", "param2": "value2"}}}}
+</tool_call>
+
+After calling a tool, you will receive the result and should continue the conversation based on that result."""
+
+        # Append tool instructions to system message
+        # Keep the original role type (system) to maintain proper conversation flow
+        if isinstance(system_message, BaseMessage):
+            # Create a new message with updated content but same role
+            from camel.types import RoleType
+            system_message = BaseMessage(
+                role_name=system_message.role_name,
+                role_type=system_message.role_type,
+                meta_dict=system_message.meta_dict,
+                content=system_message.content + tool_instructions,
+            )
+        else:
+            system_message = system_message + tool_instructions
+
+        # When using simulated tool calling, pass tools separately for local execution
+        # but don't pass them to ChatAgent (which would send them to the API)
+        return ListenChatAgent(
+            options.project_id,
+            agent_name,
+            system_message,
+            model=model,
+            tools=tools,  # Pass tools for local execution
+            agent_id=agent_id,
+            prune_tool_calls_from_memory=prune_tool_calls_from_memory,
+            toolkits_to_register_agent=toolkits_to_register_agent,
+            enable_snapshot_clean=enable_snapshot_clean,
+            stream_accumulate=False,
+            support_native_tool_calling=False,  # Enable simulated mode in agent
+        )
+
     return ListenChatAgent(
         options.project_id,
         agent_name,
@@ -143,4 +207,5 @@ def agent_model(
         toolkits_to_register_agent=toolkits_to_register_agent,
         enable_snapshot_clean=enable_snapshot_clean,
         stream_accumulate=False,
+        support_native_tool_calling=True,
     )

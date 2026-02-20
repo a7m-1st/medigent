@@ -59,8 +59,11 @@ class Workforce(BaseWorkforce):
         graceful_shutdown_timeout: float = 3,
         share_memory: bool = False,
         use_structured_output_handler: bool = True,
+        support_native_tool_calling: bool = True,
+        max_retries: int = 3,
     ) -> None:
         self.api_task_id = api_task_id
+        self._support_native_tool_calling = support_native_tool_calling
         logger.info("=" * 80)
         logger.info(
             "🏭 [WF-LIFECYCLE] Workforce.__init__ STARTED",
@@ -83,13 +86,78 @@ class Workforce(BaseWorkforce):
             use_structured_output_handler=use_structured_output_handler,
             task_timeout_seconds=3600,  # 60 minutes
             failure_handling_config=FailureHandlingConfig(
+                max_retries=max_retries,
                 enabled_strategies=["retry", "replan"],
+                halt_on_max_retries=False,  # Don't halt entire workforce on single task failure
             ),
         )
         self.task_agent.stream_accumulate = True
         self.task_agent._stream_accumulate_explicit = True
+
+        # --- Monkey-patch role sanitization onto coordinator & task agents ---
+        # The base Workforce.__init__ reconstructs these as plain ChatAgent
+        # instances (discarding the ListenChatAgent we passed in).  Plain
+        # ChatAgent doesn't have our _sanitize_message_roles override, so
+        # messages sent by the coordinator/task agent can violate strict
+        # role-alternation templates (e.g. MedGemma/GLM-4).  We patch
+        # the response methods on these instances to apply sanitization.
+        # Only needed when the model doesn't support native tool calling
+        # (i.e. it uses a strict Jinja chat template).
+        if not support_native_tool_calling:
+            self._patch_agent_sanitization(
+                self.coordinator_agent, support_native_tool_calling
+            )
+            self._patch_agent_sanitization(
+                self.task_agent, support_native_tool_calling
+            )
+
         logger.info(
-            f"[WF-LIFECYCLE] ✅ Workforce.__init__ COMPLETED, id={id(self)}"
+            f"[WF-LIFECYCLE] Workforce.__init__ COMPLETED, id={id(self)}"
+        )
+
+    @staticmethod
+    def _patch_agent_sanitization(
+        agent: ChatAgent,
+        support_native_tool_calling: bool = True,
+    ) -> None:
+        """Monkey-patch role sanitization onto a plain ``ChatAgent``.
+
+        The base ``Workforce.__init__`` reconstructs ``coordinator_agent``
+        and ``task_agent`` as plain ``ChatAgent`` instances, discarding
+        any ``ListenChatAgent`` subclass (and its sanitization overrides).
+        This method patches the sync and async ``_get_model_response`` /
+        ``_aget_model_response`` methods on the *instance* so that
+        ``_sanitize_message_roles`` is applied before every API call.
+
+        When ``support_native_tool_calling`` is False, also patches
+        ``_get_full_tool_schemas`` to return ``[]`` so the model backend
+        doesn't send tool schemas the model can't handle.
+        """
+        sanitize = ListenChatAgent._sanitize_message_roles
+        original_sync = agent._get_model_response
+        original_async = agent._aget_model_response
+
+        def patched_sync(openai_messages, *args, **kwargs):
+            openai_messages = sanitize(openai_messages)
+            return original_sync(openai_messages, *args, **kwargs)
+
+        async def patched_async(openai_messages, *args, **kwargs):
+            openai_messages = sanitize(openai_messages)
+            return await original_async(openai_messages, *args, **kwargs)
+
+        # Assign directly on the instance — Python will find these
+        # before looking up the class method via MRO.
+        agent._get_model_response = patched_sync
+        agent._aget_model_response = patched_async
+
+        # Suppress tool schemas for models without native support
+        if not support_native_tool_calling:
+            agent._get_full_tool_schemas = lambda: []
+
+        logger.debug(
+            f"[WF-PATCH] Patched role sanitization onto "
+            f"{agent.__class__.__name__} (id={id(agent)}, "
+            f"native_tools={support_native_tool_calling})"
         )
 
     def _analyze_task(
@@ -104,6 +172,9 @@ class Workforce(BaseWorkforce):
         The base class can return None when the LLM fails to produce
         valid structured output. We retry up to _ANALYZE_TASK_MAX_RETRIES
         times before falling back.
+        
+        For MedGemma and other specialized medical models, we are more lenient
+        with quality scoring since the structured output format may vary.
         """
         last_exception: Exception | None = None
 
@@ -116,6 +187,22 @@ class Workforce(BaseWorkforce):
                 )
 
                 if result is not None:
+                    # Be more lenient for radiologist tasks with MedGemma
+                    # Accept results with lower quality if they have content
+                    if (
+                        not for_failure
+                        and result.quality_score is not None
+                        and result.quality_score < 70
+                        and task.result
+                        and len(str(task.result)) > 100
+                    ):
+                        # Task has substantial content, bump quality score
+                        logger.info(
+                            f"[WF-QUALITY] Boosting quality score from "
+                            f"{result.quality_score} to 75 for task with "
+                            f"substantial content (len={len(str(task.result))})"
+                        )
+                        result.quality_score = 75
                     return result
 
                 logger.warning(

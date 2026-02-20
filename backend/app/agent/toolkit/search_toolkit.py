@@ -18,7 +18,7 @@ logger = logging.getLogger("search_toolkit")
 
 @auto_listen_toolkit(BaseSearchToolkit)
 class SearchToolkit(BaseSearchToolkit, AbstractToolkit):
-    agent_name: str = Agents.browser_agent
+    agent_name: str = Agents.clinical_researcher
 
     def __init__(
         self,

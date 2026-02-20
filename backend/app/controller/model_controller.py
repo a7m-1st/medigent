@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.component.error_format import normalize_error_to_openai_format
 from app.component.model_validation import create_agent
-from app.model.chat import PLATFORM_MAPPING
 
 logger = logging.getLogger("model_controller")
 
@@ -25,11 +24,6 @@ class ValidateModelRequest(BaseModel):
     extra_params: dict | None = Field(
         None, description="Extra model parameters"
     )
-
-    @field_validator("model_platform")
-    @classmethod
-    def map_model_platform(cls, v: str) -> str:
-        return PLATFORM_MAPPING.get(v, v)
 
 
 class ValidateModelResponse(BaseModel):

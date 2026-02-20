@@ -8,6 +8,7 @@ const API_CONFIG_KEY = 'medgemma_api_config';
 // Zod schema for API config validation
 const ApiConfigSchema = z.object({
   geminiApiKey: z.string().min(1),
+  medgemmaHostUrl: z.string().optional(),
 });
 
 export type ApiConfig = z.infer<typeof ApiConfigSchema>;
@@ -15,6 +16,7 @@ export type ApiConfig = z.infer<typeof ApiConfigSchema>;
 interface APIConfigState {
   // State
   geminiApiKey: string | null;
+  medgemmaHostUrl: string | null;
   isConfigured: boolean;
   isModalOpen: boolean;
   backendHasApiKey: boolean;
@@ -22,7 +24,7 @@ interface APIConfigState {
   backendModelType: string;
   
   // Actions
-  setApiKey: (key: string) => void;
+  setApiKey: (key: string, medgemmaHostUrl?: string) => void;
   clearApiKey: () => void;
   loadFromStorage: () => void;
   validateApiKey: (key: string) => boolean;
@@ -34,6 +36,7 @@ export const useApiConfigStore = create<APIConfigState>()(
   immer((set, get) => ({
     // Initial state
     geminiApiKey: null,
+    medgemmaHostUrl: null,
     isConfigured: false,
     isModalOpen: false,
     backendHasApiKey: false,
@@ -70,15 +73,17 @@ export const useApiConfigStore = create<APIConfigState>()(
     /**
      * Set and save API key to localStorage
      */
-    setApiKey: (key: string) => {
+    setApiKey: (key: string, medgemmaHostUrl?: string) => {
       const trimmed = key.trim();
-      const validated = ApiConfigSchema.safeParse({ geminiApiKey: trimmed });
-      
+      const trimmedUrl = medgemmaHostUrl?.trim() || '';
+      const validated = ApiConfigSchema.safeParse({ geminiApiKey: trimmed, medgemmaHostUrl: trimmedUrl });
+
       if (validated.success) {
         try {
-          localStorage.setItem(API_CONFIG_KEY, JSON.stringify({ geminiApiKey: trimmed }));
+          localStorage.setItem(API_CONFIG_KEY, JSON.stringify({ geminiApiKey: trimmed, medgemmaHostUrl: trimmedUrl }));
           set((state) => {
             state.geminiApiKey = trimmed;
+            state.medgemmaHostUrl = trimmedUrl || null;
             state.isConfigured = true;
             state.isModalOpen = false;
           });
@@ -102,6 +107,7 @@ export const useApiConfigStore = create<APIConfigState>()(
       
       set((state) => {
         state.geminiApiKey = null;
+        state.medgemmaHostUrl = null;
         state.isConfigured = false;
         // Only reopen modal if backend also has no key
         state.isModalOpen = !get().backendHasApiKey;
@@ -122,6 +128,7 @@ export const useApiConfigStore = create<APIConfigState>()(
           if (validated.success) {
             set((state) => {
               state.geminiApiKey = validated.data.geminiApiKey;
+              state.medgemmaHostUrl = validated.data.medgemmaHostUrl || null;
               state.isConfigured = true;
               state.isModalOpen = false;
             });

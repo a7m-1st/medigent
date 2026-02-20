@@ -1,17 +1,22 @@
 
 
-from app.agent.factory.browser import browser_agent
-from app.agent.factory.developer import developer_agent
-from app.agent.factory.document import document_agent
-from app.agent.factory.multi_modal import multi_modal_agent
+from app.agent.factory.attending_physician import attending_physician_agent
+from app.agent.factory.chief_of_medicine import chief_of_medicine_agent
+from app.agent.factory.clinical_pharmacologist import clinical_pharmacologist_agent
+from app.agent.factory.clinical_researcher import clinical_researcher_agent
+from app.agent.factory.medical_scribe import medical_scribe_agent
 from app.agent.factory.question_confirm import question_confirm_agent
+from app.agent.factory.radiologist import radiologist_agent
 from app.agent.factory.task_summary import task_summary_agent
 
 __all__ = [
-    "browser_agent",
-    "developer_agent",
-    "document_agent",
-    "multi_modal_agent",
     "question_confirm_agent",
     "task_summary_agent",
+    # Medical workforce agents
+    "attending_physician_agent",
+    "chief_of_medicine_agent",
+    "clinical_pharmacologist_agent",
+    "clinical_researcher_agent",
+    "medical_scribe_agent",
+    "radiologist_agent",
 ]

@@ -21,6 +21,16 @@ export const NewAgentSchema = z.object({
 });
 export type NewAgent = z.infer<typeof NewAgentSchema>;
 
+// Agent configuration schema for secondary_agent (MedGemma)
+export const AgentConfigSchema = z.object({
+  api_url: z.string().optional(),
+  model_platform: z.string().optional(),
+  model_type: z.string().optional(),
+  api_key: z.string().optional(),
+  use_simulated_tool_calling: z.boolean().optional(),
+});
+export type AgentConfig = z.infer<typeof AgentConfigSchema>;
+
 // Chat request schema matching backend Chat model
 // Backend expects attaches as list[str], not list of objects
 export const ChatSchema = z.object({
@@ -34,7 +44,7 @@ export const ChatSchema = z.object({
   api_url: z.string().nullable().optional(),
   language: z.string().default('en'),
   browser_port: z.number().default(9222),
-  max_retries: z.number().default(3),
+  max_retries: z.number().default(5),
   allow_local_system: z.boolean().default(false),
   installed_mcp: z.record(z.string(), z.unknown()).default({}),
   bun_mirror: z.string().default(''),
@@ -43,6 +53,8 @@ export const ChatSchema = z.object({
   summary_prompt: z.string().default(''),
   extra_params: z.record(z.string(), z.unknown()).nullable().optional(),
   search_config: z.record(z.string(), z.unknown()).nullable().optional(),
+  use_simulated_tool_calling: z.boolean().default(false),
+  secondary_agent: AgentConfigSchema.nullable().optional(),
 });
 export type Chat = z.infer<typeof ChatSchema>;
 

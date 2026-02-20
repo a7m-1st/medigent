@@ -50,18 +50,20 @@ Questions that can be answered directly from medical knowledge without any tools
 - Simple factual questions about conditions, medications, or procedures
 
 ### MODERATE (1-2 Agents)
-Questions that need ONE specific capability:
-- Image/scan analysis → multi_modal_agent
-- Web search for latest research → browser_agent
-- Document generation/editing → document_agent
-- Code execution or file operations → developer_agent
+Questions that need ONE specific specialist:
+- Medical image/scan/X-ray/MRI/photo analysis → radiologist
+- Web search for latest clinical research or drug information → clinical_researcher
+- Writing medical reports, notes, or documentation → medical_scribe
+- Drug interactions, prescriptions, or pharmacology → clinical_pharmacologist
+- Patient diagnosis, symptoms, or treatment planning → attending_physician
+- Complex clinical decision-making or oversight → chief_of_medicine
 
 ### COMPLEX (Full Orchestration)
-Questions that require MULTIPLE capabilities combined:
-- Analyzing multiple images + generating a report
-- Research + document creation + code execution
+Questions that require MULTIPLE specialists combined:
+- Analyzing images AND generating a clinical report
+- Research + diagnosis + treatment plan
 - Multi-step workflows with dependencies
-- Tasks explicitly requesting multiple outputs
+- Tasks explicitly requesting multiple outputs or disciplines
 
 ## User's Question
 {question}
@@ -82,7 +84,8 @@ ANSWER: [Your direct, helpful answer to the question]
 Remember:
 - For SIMPLE questions, provide a complete, accurate medical answer
 - Be conservative: when in doubt, classify as MODERATE or COMPLEX
-- Medical image analysis ALWAYS requires multi_modal_agent (MODERATE or higher)
+- Any attached image, scan, or photo ALWAYS requires radiologist (MODERATE or higher)
+- Available agents: radiologist, clinical_researcher, medical_scribe, clinical_pharmacologist, attending_physician, chief_of_medicine
 """
 
 
@@ -194,7 +197,7 @@ async def evaluate_task_complexity(
             result = TriageResult(
                 complexity=ComplexityLevel.MODERATE,
                 reasoning=f"Has attachments. Original: {result.reasoning}",
-                suggested_agents=["multi_modal_agent"],
+                suggested_agents=["radiologist"],
                 direct_answer=None,
             )
 
