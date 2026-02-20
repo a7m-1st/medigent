@@ -1,7 +1,7 @@
+import { apiClient } from '@/lib/api';
+import { z } from 'zod';
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { z } from 'zod';
-import { apiClient } from '@/lib/api';
 
 const API_CONFIG_KEY = 'medgemma_api_config';
 
@@ -9,6 +9,8 @@ const API_CONFIG_KEY = 'medgemma_api_config';
 const ApiConfigSchema = z.object({
   geminiApiKey: z.string().min(1),
   medgemmaHostUrl: z.string().optional(),
+  medgemmaModelType: z.string().optional(),
+  medgemmaContextSize: z.number().int().positive().optional(),
 });
 
 export type ApiConfig = z.infer<typeof ApiConfigSchema>;
@@ -17,6 +19,8 @@ interface APIConfigState {
   // State
   geminiApiKey: string | null;
   medgemmaHostUrl: string | null;
+  medgemmaModelType: string | null;
+  medgemmaContextSize: number | null;
   isConfigured: boolean;
   isModalOpen: boolean;
   backendHasApiKey: boolean;
@@ -24,7 +28,7 @@ interface APIConfigState {
   backendModelType: string;
   
   // Actions
-  setApiKey: (key: string, medgemmaHostUrl?: string) => void;
+  setApiKey: (key: string, medgemmaHostUrl?: string, medgemmaModelType?: string, medgemmaContextSize?: number) => void;
   clearApiKey: () => void;
   loadFromStorage: () => void;
   validateApiKey: (key: string) => boolean;
@@ -37,6 +41,8 @@ export const useApiConfigStore = create<APIConfigState>()(
     // Initial state
     geminiApiKey: null,
     medgemmaHostUrl: null,
+    medgemmaModelType: null,
+    medgemmaContextSize: null,
     isConfigured: false,
     isModalOpen: false,
     backendHasApiKey: false,
@@ -73,17 +79,30 @@ export const useApiConfigStore = create<APIConfigState>()(
     /**
      * Set and save API key to localStorage
      */
-    setApiKey: (key: string, medgemmaHostUrl?: string) => {
+    setApiKey: (key: string, medgemmaHostUrl?: string, medgemmaModelType?: string, medgemmaContextSize?: number) => {
       const trimmed = key.trim();
       const trimmedUrl = medgemmaHostUrl?.trim() || '';
-      const validated = ApiConfigSchema.safeParse({ geminiApiKey: trimmed, medgemmaHostUrl: trimmedUrl });
+      const trimmedModelType = medgemmaModelType?.trim() || '';
+      const validated = ApiConfigSchema.safeParse({
+        geminiApiKey: trimmed,
+        medgemmaHostUrl: trimmedUrl || undefined,
+        medgemmaModelType: trimmedModelType || undefined,
+        medgemmaContextSize: medgemmaContextSize || undefined,
+      });
 
       if (validated.success) {
         try {
-          localStorage.setItem(API_CONFIG_KEY, JSON.stringify({ geminiApiKey: trimmed, medgemmaHostUrl: trimmedUrl }));
+          localStorage.setItem(API_CONFIG_KEY, JSON.stringify({
+            geminiApiKey: trimmed,
+            medgemmaHostUrl: trimmedUrl || undefined,
+            medgemmaModelType: trimmedModelType || undefined,
+            medgemmaContextSize: medgemmaContextSize || undefined,
+          }));
           set((state) => {
             state.geminiApiKey = trimmed;
             state.medgemmaHostUrl = trimmedUrl || null;
+            state.medgemmaModelType = trimmedModelType || null;
+            state.medgemmaContextSize = medgemmaContextSize || null;
             state.isConfigured = true;
             state.isModalOpen = false;
           });
@@ -108,6 +127,8 @@ export const useApiConfigStore = create<APIConfigState>()(
       set((state) => {
         state.geminiApiKey = null;
         state.medgemmaHostUrl = null;
+        state.medgemmaModelType = null;
+        state.medgemmaContextSize = null;
         state.isConfigured = false;
         // Only reopen modal if backend also has no key
         state.isModalOpen = !get().backendHasApiKey;
@@ -129,6 +150,8 @@ export const useApiConfigStore = create<APIConfigState>()(
             set((state) => {
               state.geminiApiKey = validated.data.geminiApiKey;
               state.medgemmaHostUrl = validated.data.medgemmaHostUrl || null;
+              state.medgemmaModelType = validated.data.medgemmaModelType || null;
+              state.medgemmaContextSize = validated.data.medgemmaContextSize || null;
               state.isConfigured = true;
               state.isModalOpen = false;
             });

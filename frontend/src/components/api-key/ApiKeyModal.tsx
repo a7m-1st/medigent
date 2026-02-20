@@ -16,6 +16,8 @@ export const ApiKeyModal: React.FC = () => {
   const { setApiKey, loadFromStorage, isModalOpen, setModalOpen } = useApiConfigStore();
   const [key, setKey] = useState('');
   const [medgemmaUrl, setMedgemmaUrl] = useState('');
+  const [medgemmaModelType, setMedgemmaModelType] = useState('');
+  const [medgemmaContextSize, setMedgemmaContextSize] = useState('');
 
   useEffect(() => {
     loadFromStorage();
@@ -24,9 +26,17 @@ export const ApiKeyModal: React.FC = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (key.trim()) {
-      setApiKey(key.trim(), medgemmaUrl.trim() || undefined);
+      const contextSize = medgemmaContextSize.trim() ? parseInt(medgemmaContextSize.trim(), 10) : undefined;
+      setApiKey(
+        key.trim(),
+        medgemmaUrl.trim() || undefined,
+        medgemmaModelType.trim() || undefined,
+        contextSize && !isNaN(contextSize) ? contextSize : undefined,
+      );
     }
   };
+
+  const showMedgemmaFields = medgemmaUrl.trim().length > 0;
 
   return (
     <Dialog open={isModalOpen} onOpenChange={setModalOpen}>
@@ -54,11 +64,30 @@ export const ApiKeyModal: React.FC = () => {
             />
             <Input
               type="url"
-              placeholder="Enter MedGemma host URL (uses our endpoint by default)"
+              placeholder="MedGemma host URL (optional, uses default endpoint)"
               value={medgemmaUrl}
               onChange={(e) => setMedgemmaUrl(e.target.value)}
               className="bg-input border-input-border text-foreground focus:ring-accent mt-2"
             />
+            {showMedgemmaFields && (
+              <>
+                <Input
+                  type="text"
+                  placeholder="MedGemma model type (e.g. medgemma-4b)"
+                  value={medgemmaModelType}
+                  onChange={(e) => setMedgemmaModelType(e.target.value)}
+                  className="bg-input border-input-border text-foreground focus:ring-accent"
+                />
+                <Input
+                  type="number"
+                  placeholder="Context window size in tokens (e.g. 16384)"
+                  value={medgemmaContextSize}
+                  onChange={(e) => setMedgemmaContextSize(e.target.value)}
+                  min={1024}
+                  className="bg-input border-input-border text-foreground focus:ring-accent"
+                />
+              </>
+            )}
           </div>
           <DialogFooter className="sm:justify-center">
             <Button

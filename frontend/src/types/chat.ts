@@ -28,6 +28,7 @@ export const AgentConfigSchema = z.object({
   model_type: z.string().optional(),
   api_key: z.string().optional(),
   use_simulated_tool_calling: z.boolean().optional(),
+  model_context_size: z.number().int().positive().optional(),
 });
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 

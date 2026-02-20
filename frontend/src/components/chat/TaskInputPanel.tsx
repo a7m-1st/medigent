@@ -184,7 +184,7 @@ export const TaskInputPanel: React.FC = () => {
           env_path: null,
           summary_prompt: "",
           extra_params: null,
-          search_config: null
+          search_config: null,
         });
 
         console.log('Message sent successfully');
