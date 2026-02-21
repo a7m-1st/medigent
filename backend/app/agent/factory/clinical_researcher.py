@@ -47,7 +47,7 @@ async def clinical_researcher_agent(options: Chat):
     pubmed_toolkit = PubMedToolkit()
     pubmed_toolkit = message_integration.register_toolkits(pubmed_toolkit)
     
-    search_toolkit = SearchToolkit()
+    search_toolkit = SearchToolkit(api_task_id=options.project_id)
     search_toolkit = message_integration.register_toolkits(search_toolkit)
     
     browser_toolkit = HybridBrowserToolkit(
