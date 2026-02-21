@@ -18,7 +18,6 @@ import {
   Wrench,
   MessageSquare,
   Clock,
-  Terminal,
 } from 'lucide-react';
 import React, { useState } from 'react';
 
@@ -312,7 +311,7 @@ function formatJson(str: string) {
   }
 }
 
-const ActivityItem: React.FC<{ entry: ActivityEntry; isLast: boolean }> = ({ entry, isLast }) => {
+const ActivityItem: React.FC<{ entry: ActivityEntry; isLast: boolean }> = ({ entry, isLast: _isLast }) => {
   const [expanded, setExpanded] = useState(false);
 
   let icon = <Circle className="w-3 h-3 text-foreground-muted" />;

@@ -40,21 +40,18 @@ register_routers(api)
 # Serve static files from the frontend build
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_dir):
-    # Mount static files without html=True - will only serve actual files, not directories
-    api.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+    # Mount /assets specifically so StaticFiles doesn't swallow unknown routes
+    assets_dir = os.path.join(static_dir, "assets")
+    if os.path.exists(assets_dir):
+        api.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
-    # Catch-all route for SPA - serves index.html for any non-file routes
-    # This must be added after all other routes (including API routes)
+    # Catch-all route for SPA - must come after all API routes
     @api.get("/{path:path}")
     async def serve_spa(path: str):
-        # Check if path is for an actual file (has extension)
-        if os.path.splitext(path)[1]:
-            # It's a file request - let static files handle it or return 404
-            file_path = os.path.join(static_dir, path)
-            if os.path.exists(file_path):
-                return FileResponse(file_path)
-            from fastapi import HTTPException
-            raise HTTPException(status_code=404, detail="File not found")
-        
-        # For non-file paths, serve index.html (SPA routing)
+        # Serve actual files that exist in the static dir (favicon, manifest, etc.)
+        file_path = os.path.join(static_dir, path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+
+        # For all other paths (SPA client-side routes), serve index.html
         return FileResponse(os.path.join(static_dir, "index.html"))
