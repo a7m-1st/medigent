@@ -32,8 +32,8 @@ export const DashboardPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [rightSidebarOpen, setRightSidebarOpen] = React.useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const prevIsMobile = useRef<boolean | null>(null);
   const { theme, setTheme, resolvedTheme } = useUIStore();
-  const isInitialMount = useRef(true);
   const { isConfigured, checkBackendConfig } = useApiConfigStore();
 
   // Check backend config on mount
@@ -56,6 +56,10 @@ export const DashboardPage: React.FC = () => {
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < MOBILE_BREAKPOINT;
+      if (mobile && !prevIsMobile.current && rightSidebarOpen) {
+        setRightSidebarOpen(false);
+      }
+      prevIsMobile.current = mobile;
       setIsMobile(mobile);
     };
 
@@ -63,15 +67,7 @@ export const DashboardPage: React.FC = () => {
     window.addEventListener('resize', handleResize);
     
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  // Auto-close sidebar on mobile on initial mount only
-  useEffect(() => {
-    if (isInitialMount.current && isMobile) {
-      setRightSidebarOpen(false);
-    }
-    isInitialMount.current = false;
-  }, [isMobile]);
+  }, [rightSidebarOpen]);
 
   // Cycle through themes: light -> dark -> system
   const cycleTheme = () => {
