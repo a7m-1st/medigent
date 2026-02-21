@@ -196,7 +196,8 @@ export const TaskInputPanel: React.FC = () => {
         role: 'user',
         content: currentMessage,
         timestamp: new Date().toISOString(),
-        images: currentAttachments.length > 0 ? currentAttachments.map(a => a.data) : undefined,
+        images: currentAttachments.filter(a => a.type === 'image').map(a => a.data) || undefined,
+        files: currentAttachments.filter(a => a.type === 'pdf').map(a => ({ data: a.data, name: a.name })) || undefined,
       };
       useChatStore.getState().addMessage(userMsg);
       const pid = useChatStore.getState().currentProjectId;
@@ -240,7 +241,8 @@ export const TaskInputPanel: React.FC = () => {
         role: 'user',
         content: currentMessage,
         timestamp: new Date().toISOString(),
-        images: currentAttachments.length > 0 ? currentAttachments.map(a => a.data) : undefined,
+        images: currentAttachments.filter(a => a.type === 'image').map(a => a.data) || undefined,
+        files: currentAttachments.filter(a => a.type === 'pdf').map(a => ({ data: a.data, name: a.name })) || undefined,
       };
       useChatStore.getState().addMessage(userMsg);
       const existingProjectId = useChatStore.getState().currentProjectId;

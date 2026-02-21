@@ -10,7 +10,7 @@ interface MessageBubbleProps {
 }
 
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
-  const { role, content, images } = message;
+  const { role, content, images, files } = message;
 
   // System messages render as centered info pills
   if (role === 'system') {
@@ -78,6 +78,22 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
                       alt={`Attachment ${idx + 1}`}
                       className="w-full h-full object-cover"
                     />
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Attached files (PDFs) */}
+            {files && files.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {files.map((file, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background-secondary"
+                  >
+                    <FileText className="w-5 h-5 text-red-500 shrink-0" />
+                    <span className="text-xs text-foreground-secondary truncate max-w-[120px]">
+                      {file.name}
+                    </span>
                   </div>
                 ))}
               </div>
