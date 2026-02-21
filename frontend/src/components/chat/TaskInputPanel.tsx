@@ -550,11 +550,11 @@ export const TaskInputPanel: React.FC = () => {
           <>
             <span className="w-1 h-1 rounded-full bg-border" />
             <span
-              title="Sending last 5 conversation turns as context with each message."
+              title="Sending last 5 conversation turns as context with each message w/o attachments."
               className="flex items-center gap-1 text-amber-500 cursor-help normal-case tracking-normal"
             >
               <AlertTriangle className="w-3 h-3" />
-              <span>Message window of 5 turns</span>
+              <span>Memory of 5 turns (w/o media)</span>
             </span>
           </>
         )}

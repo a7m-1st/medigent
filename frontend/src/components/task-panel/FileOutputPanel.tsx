@@ -293,7 +293,7 @@ export const FileOutputPanel: React.FC = () => {
         {/* File List */}
         <div className={cn(
           "overflow-y-auto",
-          viewMode === 'preview' && selectedFile ? "w-1/2 border-r" : "w-full"
+          viewMode === 'preview' && selectedFile ? "hidden" : "w-full"
         )}>
           {loading && files.length === 0 ? (
             <div className="flex items-center justify-center h-32">
@@ -464,19 +464,9 @@ export const FileOutputPanel: React.FC = () => {
 
         {/* File Preview */}
         {viewMode === 'preview' && selectedFile && (
-          <div className="w-1/2 flex flex-col overflow-hidden">
+          <div className="w-full flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-background-secondary">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm font-medium truncate">{selectedFile.name}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => handleDownload(selectedFile)}
-                  className="p-1 rounded hover:bg-background"
-                  title="Download"
-                >
-                  <Download className="w-4 h-4" />
-                </button>
                 <button
                   onClick={() => {
                     setViewMode('list');
@@ -486,10 +476,20 @@ export const FileOutputPanel: React.FC = () => {
                     }
                     setFileContent(null);
                   }}
-                  className="p-1 rounded hover:bg-background"
-                  title="Close"
+                  className="p-1 rounded hover:bg-background text-foreground-muted hover:text-foreground"
+                  title="Back to files"
                 >
-                  ×
+                  <ChevronRight className="w-4 h-4 rotate-180" />
+                </button>
+                <span className="text-sm font-medium truncate">{selectedFile.name}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => handleDownload(selectedFile)}
+                  className="p-1 rounded hover:bg-background"
+                  title="Download"
+                >
+                  <Download className="w-4 h-4" />
                 </button>
               </div>
             </div>
