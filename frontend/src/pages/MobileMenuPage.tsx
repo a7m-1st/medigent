@@ -7,11 +7,11 @@ import {
   HelpCircle,
   History,
   LayoutDashboard,
+  MessageSquarePlus,
   Monitor,
   Moon,
-  PanelRightOpen,
   Settings,
-  Sun,
+  Sun
 } from 'lucide-react';
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -38,9 +38,9 @@ export const MobileMenuPage: React.FC = () => {
 
   const menuItems = [
     {
-      icon: <LayoutDashboard className="w-5 h-5" />,
-      label: 'Home',
-      description: 'Return to dashboard',
+      icon: <MessageSquarePlus className="w-5 h-5" />,
+      label: 'New Chat',
+      description: 'Start a new conversation',
       onClick: () => {
         useChatStore.getState().reset();
         useAgentStatusStore.getState().reset();
@@ -55,19 +55,21 @@ export const MobileMenuPage: React.FC = () => {
       description: 'View conversation history',
       onClick: () => navigate('/history'),
     },
-    {
-      icon: <PanelRightOpen className="w-5 h-5" />,
-      label: 'Monitoring Panel',
-      description: 'View task monitoring and agent activity',
-      onClick: () => navigate('/?panel=open'),
-    },
+    // {
+    //   icon: <PanelRightOpen className="w-5 h-5" />,
+    //   label: 'Monitoring Panel',
+    //   description: 'View task monitoring and agent activity',
+    //   onClick: () => navigate('/?panel=open'),
+    // },
     {
       icon: <Settings className="w-5 h-5" />,
       label: 'Configure API Key',
-      description: 'Reset your API configuration',
+      description: 'Manage your API configuration',
       onClick: () => {
-        useApiConfigStore.getState().clearApiKey();
-        navigate('/');
+        navigate(-1);
+        setTimeout(() => {
+          useApiConfigStore.getState().setModalOpen(true);
+        }, 100);
       },
     },
     {

@@ -62,6 +62,15 @@ export const TaskInputPanel: React.FC = () => {
 
   const { sendMessage, sendHumanReply, stopChat, isLoading, isStreaming } = useChat();
   const { geminiApiKey, backendHasApiKey } = useApiConfigStore();
+
+  // Consume pending input from suggestion chips
+  const pendingInput = useChatStore((state) => state.pendingInput);
+  useEffect(() => {
+    if (pendingInput) {
+      setMessage(pendingInput);
+      useChatStore.getState().setPendingInput(null);
+    }
+  }, [pendingInput]);
   const wasStopped = useChatStore((state) => state.wasStopped);
   const waitingForHumanReply = useChatStore((state) => state.waitingForHumanReply);
   const currentAskAgent = useChatStore((state) => state.currentAskAgent);
@@ -241,7 +250,7 @@ export const TaskInputPanel: React.FC = () => {
 
         // Use sendMessage which automatically detects whether to use improve or start new chat
         // If no frontend key, send empty string — backend will use its .env default
-        await sendMessage(message, attachments.map(a => a.data), {
+        await sendMessage(currentMessage, currentAttachments.map(a => a.data), {
           model_platform: DEFAULT_MODEL_PLATFORM,
           model_type: DEFAULT_MODEL_TYPE,
           api_key: geminiApiKey || "",
@@ -264,6 +273,9 @@ export const TaskInputPanel: React.FC = () => {
         // If this was a new chat (no existing project), navigate to project page
         const newProjectId = useChatStore.getState().currentProjectId;
         if (!existingProjectId && newProjectId) {
+          // Persist the user message to the project before navigating,
+          // so ProjectPage's useEffect can reload it from projectStore.
+          useProjectStore.getState().addMessageToProject(newProjectId, userMsg);
           navigate(`/project/${newProjectId}`);
         }
       } catch (error) {
@@ -354,9 +366,9 @@ export const TaskInputPanel: React.FC = () => {
                 {file.type === 'image' ? (
                   <img src={file.data} alt={file.name} className="w-full h-full object-cover" />
                 ) : (
-                  <div className="flex flex-col items-center justify-center p-1 w-full h-full bg-red-50">
-                    <FileText className="w-6 h-6 text-red-500" />
-                    <span className="text-[8px] text-red-600 truncate w-full text-center px-1">
+                  <div className="flex flex-col items-center justify-center p-1 w-full h-full bg-red-50 dark:bg-red-900/30">
+                    <FileText className="w-6 h-6 text-red-500 dark:text-red-400" />
+                    <span className="text-[8px] text-red-600 dark:text-red-400 truncate w-full text-center px-1">
                       PDF
                     </span>
                   </div>

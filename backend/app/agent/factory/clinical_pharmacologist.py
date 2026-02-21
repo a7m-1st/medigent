@@ -52,7 +52,7 @@ async def clinical_pharmacologist_agent(options: Chat):
     )
     
     # Toolkits
-    search_toolkit = SearchToolkit()
+    search_toolkit = SearchToolkit(api_task_id=options.project_id)
     search_toolkit = message_integration.register_toolkits(search_toolkit)
     
     note_toolkit = NoteTakingToolkit(

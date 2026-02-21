@@ -4,7 +4,7 @@ import { ConversationPanel } from '@/components/conversation/ConversationPanel';
 import { ErrorBanner } from '@/components/layout/ErrorBanner';
 import { MonitoringPanel } from '@/components/task-panel/MonitoringPanel';
 import { cn } from '@/lib/utils';
-import { useUIStore } from '@/stores';
+import { useAgentStatusStore, useResourceStore, useTaskDecompStore, useUIStore } from '@/stores';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -16,6 +16,7 @@ import {
   History,
   LayoutDashboard,
   Menu,
+  MessageSquarePlus,
   Monitor,
   Moon,
   PanelRightClose,
@@ -34,8 +35,8 @@ export const ProjectPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [rightSidebarOpen, setRightSidebarOpen] = React.useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const prevIsMobile = useRef<boolean | null>(null);
   const { theme, setTheme, resolvedTheme } = useUIStore();
-  const isInitialMount = useRef(true);
 
   const project = useProjectStore((s) =>
     s.projects.find((p) => p.id === projectId)
@@ -90,6 +91,10 @@ export const ProjectPage: React.FC = () => {
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < MOBILE_BREAKPOINT;
+      if (mobile && !prevIsMobile.current && rightSidebarOpen) {
+        setRightSidebarOpen(false);
+      }
+      prevIsMobile.current = mobile;
       setIsMobile(mobile);
     };
 
@@ -97,15 +102,7 @@ export const ProjectPage: React.FC = () => {
     window.addEventListener('resize', handleResize);
     
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  // Auto-close sidebar on mobile on initial mount only
-  useEffect(() => {
-    if (isInitialMount.current && isMobile) {
-      setRightSidebarOpen(false);
-    }
-    isInitialMount.current = false;
-  }, [isMobile]);
+  }, [rightSidebarOpen]);
 
   const cycleTheme = () => {
     const themes: ('light' | 'dark' | 'system')[] = ['light', 'dark', 'system'];
@@ -142,11 +139,22 @@ export const ProjectPage: React.FC = () => {
         "w-16 flex-col items-center py-6 border-r border-border bg-sidebar z-50 shrink-0",
         isMobile ? 'hidden' : 'flex'
       )}>
-        <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center mb-10 shadow-glow">
+        <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center mb-6 shadow-glow">
           <LayoutDashboard className="w-6 h-6 text-accent-foreground" />
         </div>
 
         <div className="flex-1 flex flex-col gap-6">
+          <NavIcon
+            icon={<MessageSquarePlus className="w-5 h-5" />}
+            onClick={() => {
+              useChatStore.getState().reset();
+              useAgentStatusStore.getState().reset();
+              useTaskDecompStore.getState().reset();
+              useResourceStore.getState().reset();
+              navigate('/');
+            }}
+            tooltip="New Chat"
+          />
           <NavIcon
             icon={<History className="w-5 h-5" />}
             onClick={() => navigate('/history')}
@@ -270,9 +278,9 @@ export const ProjectPage: React.FC = () => {
           <AnimatePresence>
             {rightSidebarOpen && (
               <motion.aside
-                initial={isMobile ? { x: '100%', opacity: 0 } : { x: 420, opacity: 0 }}
-                animate={isMobile ? { x: 0, opacity: 1 } : { x: 0, opacity: 1 }}
-                exit={isMobile ? { x: '100%', opacity: 0 } : { x: 420, opacity: 0 }}
+                initial={isMobile ? { x: '100%', opacity: 0 } : { width: 0, opacity: 0 }}
+                animate={isMobile ? { x: 0, opacity: 1 } : { width: 420, opacity: 1 }}
+                exit={isMobile ? { x: '100%', opacity: 0 } : { width: 0, opacity: 0 }}
                 transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
                 className={cn(
                   "bg-background border-l border-border flex flex-col shrink-0 overflow-hidden",

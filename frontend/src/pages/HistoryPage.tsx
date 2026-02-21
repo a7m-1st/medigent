@@ -1,6 +1,6 @@
 import { ApiKeyModal } from '@/components/api-key/ApiKeyModal';
 import { cn } from '@/lib/utils';
-import { useUIStore } from '@/stores';
+import { useAgentStatusStore, useChatStore, useResourceStore, useTaskDecompStore, useUIStore } from '@/stores';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { useProjectStore } from '@/stores/projectStore';
 import {
@@ -14,11 +14,13 @@ import {
   ListChecks,
   Menu,
   MessageSquare,
+  MessageSquarePlus,
   Monitor,
   Moon,
   Plus,
   Settings,
   Sun,
+  Trash2,
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -44,6 +46,7 @@ export const HistoryPage: React.FC = () => {
   const navigate = useNavigate();
   const projects = useProjectStore((s) => s.projects);
   const createProject = useProjectStore((s) => s.createProject);
+  const deleteProject = useProjectStore((s) => s.deleteProject);
   const { theme, setTheme, resolvedTheme } = useUIStore();
   const { setModalOpen } = useApiConfigStore();
   const [isMobile, setIsMobile] = useState(false);
@@ -66,6 +69,11 @@ export const HistoryPage: React.FC = () => {
     navigate(`/project/${projectId}`);
   };
 
+  const handleDelete = (e: React.MouseEvent, projectId: string) => {
+    e.stopPropagation();
+    deleteProject(projectId);
+  };
+
   const cycleTheme = () => {
     const themes: ('light' | 'dark' | 'system')[] = ['light', 'dark', 'system'];
     const currentIndex = themes.indexOf(theme);
@@ -82,11 +90,22 @@ export const HistoryPage: React.FC = () => {
         "w-16 flex flex-col items-center py-6 border-r border-border bg-sidebar z-50 shrink-0",
         isMobile && "hidden"
       )}>
-        <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center mb-10 shadow-glow">
+        <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center mb-6 shadow-glow">
           <LayoutDashboard className="w-6 h-6 text-accent-foreground" />
         </div>
 
         <div className="flex-1 flex flex-col gap-6">
+          <NavIcon
+            icon={<MessageSquarePlus className="w-5 h-5" />}
+            onClick={() => {
+              useChatStore.getState().reset();
+              useAgentStatusStore.getState().reset();
+              useTaskDecompStore.getState().reset();
+              useResourceStore.getState().reset();
+              navigate('/');
+            }}
+            tooltip="New Chat"
+          />
           <NavIcon icon={<History className="w-5 h-5" />} active />
           <NavIcon
             icon={<Settings className="w-5 h-5" />}
@@ -195,6 +214,14 @@ export const HistoryPage: React.FC = () => {
                             {project.files.length} files
                           </span>
                         </div>
+                      </div>
+                      {/* Delete button - visible on hover */}
+                      <div
+                        onClick={(e) => handleDelete(e, project.id)}
+                        className="p-2 rounded-lg opacity-0 group-hover:opacity-100 text-foreground-muted hover:text-error hover:bg-error/10 transition-all shrink-0"
+                        title="Delete project"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </div>
                     </div>
                   </button>
