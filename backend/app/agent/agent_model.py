@@ -169,7 +169,7 @@ def agent_model(
         tool_instructions = f"""
 
 You have access to the following tools:
-{json.dumps(tool_descriptions, indent=2)}
+{json.dumps(tool_descriptions, separators=(',', ':'))}
 
 When you need to use a tool, format your response like this:
 <tool_call>
