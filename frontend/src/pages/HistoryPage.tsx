@@ -6,7 +6,6 @@ import { useProjectStore } from '@/stores/projectStore';
 import {
   ArrowLeft,
   Calendar,
-  FileText,
   FolderOpen,
   HelpCircle,
   History,
@@ -20,7 +19,7 @@ import {
   Plus,
   Settings,
   Sun,
-  Trash2,
+  Trash2
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -208,10 +207,6 @@ export const HistoryPage: React.FC = () => {
                           <span className="flex items-center gap-1">
                             <ListChecks className="w-3 h-3" />
                             {project.taskIds.length} tasks
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <FileText className="w-3 h-3" />
-                            {project.files.length} files
                           </span>
                         </div>
                       </div>
