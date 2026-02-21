@@ -24,14 +24,8 @@ def get_working_directory(options: Chat, task_lock=None) -> str:
 
         task_lock = get_task_lock_if_exists(options.project_id)
 
-    if (
-        task_lock
-        and hasattr(task_lock, "new_folder_path")
-        and task_lock.new_folder_path
-    ):
-        return str(task_lock.new_folder_path)
-    else:
-        return env("file_save_path", options.file_save_path())
+    default_path = options.file_save_path() if options else "uploads"
+    return env("file_save_path", default_path)
 
 
 def is_base64_image(data: str) -> bool:
