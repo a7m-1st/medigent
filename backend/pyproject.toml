@@ -22,6 +22,7 @@ dependencies = [
     "debugpy>=1.8.17",
     "markitdown>=0.1.5",
     "pdfplumber>=0.11.9",
+    "reportlab>=4.4.10",
 ]
 
 

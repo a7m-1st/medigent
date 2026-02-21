@@ -9,9 +9,6 @@ from camel.toolkits import ToolkitMessageIntegration
 from app.agent.agent_model import agent_model
 from app.agent.listen_chat_agent import logger
 from app.agent.prompt import RADIOLOGIST_PROMPT
-from app.agent.toolkit.document_analysis_toolkit import (
-    DocumentAnalysisToolkit,
-)
 from app.agent.toolkit.human_toolkit import HumanToolkit
 from app.agent.toolkit.image_analysis_toolkit import ImageAnalysisToolkit
 from app.agent.toolkit.note_taking_toolkit import NoteTakingToolkit
@@ -76,15 +73,6 @@ async def radiologist_agent(options: Chat):
     # )
     # video_analysis_toolkit = message_integration.register_toolkits(video_analysis_toolkit)
     
-    document_analysis_toolkit = DocumentAnalysisToolkit(
-        api_task_id=options.project_id,
-        working_directory=working_directory,
-    )
-    document_analysis_toolkit.agent_name = Agents.radiologist
-    document_analysis_toolkit = message_integration.register_toolkits(
-        document_analysis_toolkit
-    )
-    
     note_toolkit = NoteTakingToolkit(
         api_task_id=options.project_id,
         agent_name=Agents.radiologist,
@@ -94,7 +82,6 @@ async def radiologist_agent(options: Chat):
     
     tools = [
         *image_analysis_toolkit.get_tools(),
-        *document_analysis_toolkit.get_tools(),
         # *video_analysis_toolkit.get_tools(),
         *HumanToolkit.get_can_use_tools(
             options.project_id, Agents.radiologist
@@ -128,7 +115,6 @@ async def radiologist_agent(options: Chat):
         tools,
         tool_names=[
             ImageAnalysisToolkit.toolkit_name(),
-            DocumentAnalysisToolkit.toolkit_name(),
             # VideoAnalysisToolkit.toolkit_name(),
             HumanToolkit.toolkit_name(),
             NoteTakingToolkit.toolkit_name(),
