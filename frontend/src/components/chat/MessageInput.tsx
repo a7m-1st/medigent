@@ -35,13 +35,8 @@ export function MessageInput() {
       model_type: DEFAULT_MODEL_TYPE,
       api_key: '',
       api_url: DEFAULT_MODEL_API_URL,
-      language: 'en',
-      browser_port: 9222,
       max_retries: 5,
-      allow_local_system: false,
       installed_mcp: {},
-      bun_mirror: '',
-      uvx_mirror: '',
       summary_prompt: '',
       use_simulated_tool_calling: false,
     });

@@ -58,9 +58,6 @@ def agent_model(
             effective_config[attr] = getattr(
                 custom_model_config, attr, None
             ) or getattr(options, attr)
-        extra_params = (
-            custom_model_config.extra_params or options.extra_params or {}
-        )
         logger.info(
             f"Agent {agent_name} using custom model config: "
             f"platform={effective_config['model_platform']}, "
@@ -69,35 +66,8 @@ def agent_model(
     else:
         for attr in config_attrs:
             effective_config[attr] = getattr(options, attr)
-        extra_params = options.extra_params or {}
-    init_param_keys = {
-        "api_version",
-        "azure_ad_token",
-        "azure_ad_token_provider",
-        "max_retries",
-        "timeout",
-        "client",
-        "async_client",
-        "azure_deployment_name",
-    }
-
     init_params = {}
     model_config: dict[str, Any] = {}
-
-    excluded_keys = {"model_platform", "model_type", "api_key", "url"}
-
-    # Distribute extra_params between init_params and model_config
-    for k, v in extra_params.items():
-        if k in excluded_keys:
-            continue
-        # Skip empty values
-        if v is None or (isinstance(v, str) and not v.strip()):
-            continue
-
-        if k in init_param_keys:
-            init_params[k] = v
-        else:
-            model_config[k] = v
 
     if agent_name == Agents.task_agent:
         model_config["stream"] = True
