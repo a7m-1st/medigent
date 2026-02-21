@@ -1167,6 +1167,15 @@ precision and avoid ambiguity.
 The current date is {datetime.date.today()}. \
 For any date-related tasks, you MUST use this as \
 the current date.
+
+CRITICAL DOCUMENT ROUTING RULE:
+When a task involves PDF, DOCX, XLSX, or any other document files, you MUST \
+assign it to either the Chief of Medicine or Clinical Researcher. \
+These are the ONLY agents equipped with document reading capabilities \
+(they use the stronger Gemini model). \
+NEVER assign document reading tasks to the Radiologist, Attending Physician, \
+or Clinical Pharmacologist — they cannot read documents. \
+The Radiologist can ONLY analyze medical images (X-rays, CT, MRI, photos, etc.).
             """,
                 Agents.task_agent: f"""
 You are a helpful task planner.
@@ -1323,27 +1332,33 @@ the current date.
         "chief_of_medicine": (
             "Chief of Medicine: Senior medical director who orchestrates the entire "
             "diagnostic workflow. Decomposes complex cases, assigns tasks to specialists, "
-            "synthesizes findings, and ensures comprehensive patient care coordination."
+            "synthesizes findings, and ensures comprehensive patient care coordination. "
+            "Can read and analyze PDF, DOCX, and other document files. Route all document "
+            "analysis tasks to this agent."
         ),
         "clinical_researcher": (
             "Clinical Researcher: Research physician who gathers evidence-based medical "
             "information. Searches PubMed for peer-reviewed literature, finds clinical "
-            "guidelines, and provides citations to support diagnostic and treatment decisions."
+            "guidelines, and provides citations to support diagnostic and treatment decisions. "
+            "Can read and analyze PDF, DOCX, and other document files such as research papers "
+            "and clinical reports."
         ),
         "medical_scribe": (
             "Medical Scribe: Professional documentation specialist who creates comprehensive "
             "medical reports. Compiles findings from all specialists into structured documents "
-            "(SOAP, H&P formats) in PDF, HTML, and other professional formats."
+            "(SOAP, H&P formats) in Markdown, HTML, and other professional formats."
         ),
         "radiologist": (
             "Radiologist: Board-certified specialist in medical imaging interpretation. "
             "Analyzes X-rays, CT scans, MRI, dermatology images, and pathology slides to "
-            "detect abnormalities and guide diagnosis with confidence levels."
+            "detect abnormalities and guide diagnosis with confidence levels. "
+            "Can ONLY analyze image files — CANNOT read PDF or document files."
         ),
         "attending_physician": (
             "Attending Physician: Experienced doctor who synthesizes all clinical data. "
             "Forms differential diagnoses, creates treatment plans, and provides "
-            "evidence-based medical recommendations with clear reasoning."
+            "evidence-based medical recommendations with clear reasoning. "
+            "Cannot read PDF or document files — relies on notes from other agents for document content."
         ),
         "clinical_pharmacologist": (
             "Clinical Pharmacologist: Specialist in medications and therapeutic optimization. "
@@ -1525,11 +1540,12 @@ async def perform_triage(
     )
 
     try:
-        # Perform complexity evaluation
+        # Perform complexity evaluation with conversation context
         result = await evaluate_task_complexity(
             coordinator_agent=triage_agent,
             question=question,
             attachments=attachments if attachments else None,
+            conversation_context=conversation_context,
         )
 
         logger.info(

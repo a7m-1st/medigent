@@ -57,6 +57,7 @@ Questions that need ONE specific specialist:
 - Drug interactions, prescriptions, or pharmacology → clinical_pharmacologist
 - Patient diagnosis, symptoms, or treatment planning → attending_physician
 - Complex clinical decision-making or oversight → chief_of_medicine
+- **PDF, DOCX, or other document files attached** → chief_of_medicine OR clinical_researcher (these are the ONLY agents that can read documents)
 
 ### COMPLEX (Full Orchestration)
 Questions that require MULTIPLE specialists combined:
@@ -65,8 +66,30 @@ Questions that require MULTIPLE specialists combined:
 - Multi-step workflows with dependencies
 - Tasks explicitly requesting multiple outputs or disciplines
 
+## CRITICAL DOCUMENT ROUTING RULES
+**IMPORTANT**: Only the **Chief of Medicine** and **Clinical Researcher** can read PDF, DOCX, XLSX, and other document files. These agents use the stronger Gemini model with document analysis capabilities.
+
+The following agents CANNOT read documents:
+- Radiologist (image analysis only)
+- Attending Physician (clinical reasoning only, no document reading)
+- Clinical Pharmacologist (drug information only, no document reading)
+- Medical Scribe (report writing only, no document reading)
+
+When the user provides a PDF or document file:
+1. If it's a medical document needing review/analysis → route to **chief_of_medicine**
+2. If it's a research paper or literature → route to **clinical_researcher**
+3. If the document needs to be analyzed AND a clinical assessment is needed → route to BOTH **chief_of_medicine** and the relevant specialist (COMPLEX)
+4. NEVER route document files to radiologist, attending_physician, or clinical_pharmacologist — they cannot read them
+
+## Conversation Context
+The following shows the recent conversation history. You MUST use this information to answer questions about what was said before:
+
+{conversation_context}
+
 ## User's Question
 {question}
+
+IMPORTANT: When answering, ONLY state what the user said from the context above. DO NOT add any disclaimers about not remembering, conversations starting fresh, privacy features, or technical limitations. The user is asking about the CURRENT conversation which you CAN see above.
 
 ## Attached Files
 {attachments}
@@ -81,11 +104,14 @@ AGENTS: [Comma-separated list of needed agents, or "none" for SIMPLE]
 If COMPLEXITY is SIMPLE, also provide:
 ANSWER: [Your direct, helpful answer to the question]
 
-Remember:
-- For SIMPLE questions, provide a complete, accurate medical answer
-- Be conservative: when in doubt, classify as MODERATE or COMPLEX
-- Any attached image, scan, or photo ALWAYS requires radiologist (MODERATE or higher)
-- Available agents: radiologist, clinical_researcher, medical_scribe, clinical_pharmacologist, attending_physician, chief_of_medicine
+CRITICAL INSTRUCTIONS:
+1. For SIMPLE questions, provide a complete, accurate answer
+2. If asked about previous messages, ONLY report what you see in the Conversation Context - NO DISCLAIMERS about memory or fresh starts
+3. NEVER say "I cannot repeat/recall", "conversations start fresh", "I don't store information", or similar phrases
+4. Be conservative: when in doubt, classify as MODERATE or COMPLEX
+5. Any attached image (jpg, png, etc.) requires radiologist (MODERATE or higher)
+6. Any attached document (PDF, DOCX, XLSX, etc.) MUST be routed to chief_of_medicine or clinical_researcher — NEVER to radiologist, attending_physician, or clinical_pharmacologist
+7. Available agents: radiologist, clinical_researcher, medical_scribe, clinical_pharmacologist, attending_physician, chief_of_medicine
 """
 
 
@@ -147,6 +173,7 @@ async def evaluate_task_complexity(
     coordinator_agent: ChatAgent,
     question: str,
     attachments: list[str] | None = None,
+    conversation_context: str = "",
 ) -> TriageResult:
     """
     Evaluate the complexity of a user's question using the coordinator agent.
@@ -155,6 +182,7 @@ async def evaluate_task_complexity(
         coordinator_agent: The coordinator agent to use for evaluation
         question: The user's question
         attachments: List of file paths attached to the question
+        conversation_context: Previous conversation context for continuity
 
     Returns:
         TriageResult with complexity level and optional direct answer
@@ -165,8 +193,9 @@ async def evaluate_task_complexity(
     else:
         attachments_info = "None"
 
-    # Build the triage prompt
+    # Build the triage prompt with conversation context
     prompt = TRIAGE_PROMPT.format(
+        conversation_context=conversation_context if conversation_context else "No previous conversation",
         question=question,
         attachments=attachments_info,
     )
@@ -191,15 +220,42 @@ async def evaluate_task_complexity(
 
         # Validation: if attachments exist, cannot be SIMPLE
         if attachments and result.complexity == ComplexityLevel.SIMPLE:
-            logger.info(
-                "[TRIAGE] Upgrading SIMPLE to MODERATE due to attachments"
+            # Determine if attachments are documents or images
+            document_extensions = {
+                '.pdf', '.doc', '.docx', '.txt', '.html', '.htm',
+                '.csv', '.json', '.xml', '.xlsx', '.xls',
+                '.pptx', '.ppt', '.epub',
+            }
+            has_documents = any(
+                any(path.lower().endswith(ext) for ext in document_extensions)
+                for path in attachments
             )
-            result = TriageResult(
-                complexity=ComplexityLevel.MODERATE,
-                reasoning=f"Has attachments. Original: {result.reasoning}",
-                suggested_agents=["radiologist"],
-                direct_answer=None,
-            )
+
+            if has_documents:
+                # Documents must go to Gemini agents (chief_of_medicine or clinical_researcher)
+                logger.info(
+                    "[TRIAGE] Upgrading SIMPLE to MODERATE due to document attachments "
+                    "— routing to chief_of_medicine"
+                )
+                result = TriageResult(
+                    complexity=ComplexityLevel.MODERATE,
+                    reasoning=f"Has document attachments (PDF/DOCX/etc.) that require document analysis. "
+                              f"Only chief_of_medicine and clinical_researcher can read documents. "
+                              f"Original: {result.reasoning}",
+                    suggested_agents=["chief_of_medicine"],
+                    direct_answer=None,
+                )
+            else:
+                # Image attachments go to radiologist
+                logger.info(
+                    "[TRIAGE] Upgrading SIMPLE to MODERATE due to image attachments"
+                )
+                result = TriageResult(
+                    complexity=ComplexityLevel.MODERATE,
+                    reasoning=f"Has image attachments. Original: {result.reasoning}",
+                    suggested_agents=["radiologist"],
+                    direct_answer=None,
+                )
 
         return result
 

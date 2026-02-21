@@ -196,7 +196,8 @@ export const TaskInputPanel: React.FC = () => {
         role: 'user',
         content: currentMessage,
         timestamp: new Date().toISOString(),
-        images: currentAttachments.length > 0 ? currentAttachments.map(a => a.data) : undefined,
+        images: currentAttachments.filter(a => a.type === 'image').map(a => a.data) || undefined,
+        files: currentAttachments.filter(a => a.type === 'pdf').map(a => ({ data: a.data, name: a.name })) || undefined,
       };
       useChatStore.getState().addMessage(userMsg);
       const pid = useChatStore.getState().currentProjectId;
@@ -240,7 +241,8 @@ export const TaskInputPanel: React.FC = () => {
         role: 'user',
         content: currentMessage,
         timestamp: new Date().toISOString(),
-        images: currentAttachments.length > 0 ? currentAttachments.map(a => a.data) : undefined,
+        images: currentAttachments.filter(a => a.type === 'image').map(a => a.data) || undefined,
+        files: currentAttachments.filter(a => a.type === 'pdf').map(a => ({ data: a.data, name: a.name })) || undefined,
       };
       useChatStore.getState().addMessage(userMsg);
       const existingProjectId = useChatStore.getState().currentProjectId;
@@ -250,6 +252,12 @@ export const TaskInputPanel: React.FC = () => {
 
       try {
         console.log('Sending message:', currentMessage);
+
+        // Get the last 5 messages from project history for context (excluding current message)
+        const projectMessages = existingProjectId
+          ? useProjectStore.getState().getMessagesForProject(existingProjectId)
+          : [];
+        const last5Messages = projectMessages.slice(-6, -1);
 
         // Use sendMessage which automatically detects whether to use improve or start new chat
         // If no frontend key, send empty string — backend will use its .env default
@@ -261,7 +269,7 @@ export const TaskInputPanel: React.FC = () => {
           max_retries: 5,
           installed_mcp: { mcpServers: {} },
           summary_prompt: "",
-        });
+        }, last5Messages);
 
         console.log('Message sent successfully');
 
@@ -542,11 +550,11 @@ export const TaskInputPanel: React.FC = () => {
           <>
             <span className="w-1 h-1 rounded-full bg-border" />
             <span
-              title="Resuming a previous project. The backend doesn't maintain memory between turns, but your chat history is saved locally."
+              title="Sending last 5 conversation turns as context with each message w/o attachments."
               className="flex items-center gap-1 text-amber-500 cursor-help normal-case tracking-normal"
             >
               <AlertTriangle className="w-3 h-3" />
-              <span>Memory not supported</span>
+              <span>Memory of 5 turns (w/o media)</span>
             </span>
           </>
         )}

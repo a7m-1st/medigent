@@ -7,6 +7,9 @@ import os
 from camel.toolkits import MCPToolkit
 
 from app.agent.toolkit.audio_analysis_toolkit import AudioAnalysisToolkit
+from app.agent.toolkit.document_analysis_toolkit import (
+    DocumentAnalysisToolkit,
+)
 from app.agent.toolkit.image_analysis_toolkit import ImageAnalysisToolkit
 from app.agent.toolkit.pubmed_toolkit import PubMedToolkit
 from app.agent.toolkit.search_toolkit import SearchToolkit
@@ -28,6 +31,7 @@ async def get_toolkits(tools: list[str], agent_name: str, api_task_id: str):
         "video_analysis_toolkit": VideoAnalysisToolkit,
         "audio_analysis_toolkit": AudioAnalysisToolkit,
         "image_analysis_toolkit": ImageAnalysisToolkit,
+        "document_analysis_toolkit": DocumentAnalysisToolkit,
         "pubmed_toolkit": PubMedToolkit,
         "search_toolkit": SearchToolkit,
         "terminal_toolkit": TerminalToolkit,

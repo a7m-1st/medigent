@@ -479,6 +479,7 @@ class Workforce(BaseWorkforce):
                 content=task.content,
                 id=f"{task.id}.1",
                 parent=task,
+                additional_info=task.additional_info,
             )
             task.subtasks = [fallback_task]
             subtasks = [fallback_task]

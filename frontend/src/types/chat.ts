@@ -32,6 +32,24 @@ export const AgentConfigSchema = z.object({
 });
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 
+// Chat message schema
+// Using z.string() for id/timestamp to allow flexible internal message creation
+export const ChatMessageSchema = z.object({
+  id: z.string(),
+  role: RoleEnum,
+  content: z.string(),
+  timestamp: z.string(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  task_id: z.string().optional(),
+  // Attachments: images and files (PDFs) as base64 data URLs
+  images: z.array(z.string()).optional(),
+  files: z.array(z.object({
+    data: z.string(),
+    name: z.string(),
+  })).optional(),
+});
+export type ChatMessage = z.infer<typeof ChatMessageSchema>;
+
 // Chat request schema matching backend Chat model
 // Backend expects attaches as list[str], not list of objects
 export const ChatSchema = z.object({
@@ -48,6 +66,7 @@ export const ChatSchema = z.object({
   summary_prompt: z.string().default(''),
   use_simulated_tool_calling: z.boolean().default(false),
   secondary_agent: AgentConfigSchema.nullable().optional(),
+  history: z.array(ChatMessageSchema).default([]),
 });
 export type Chat = z.infer<typeof ChatSchema>;
 
@@ -67,20 +86,6 @@ export const HumanReplySchema = z.object({
   attaches: z.array(z.string()).default([]),
 });
 export type HumanReply = z.infer<typeof HumanReplySchema>;
-
-// Chat message schema
-// Using z.string() for id/timestamp to allow flexible internal message creation
-export const ChatMessageSchema = z.object({
-  id: z.string(),
-  role: RoleEnum,
-  content: z.string(),
-  timestamp: z.string(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-  task_id: z.string().optional(),
-  // Attachments: images as base64 data URLs
-  images: z.array(z.string()).optional(),
-});
-export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
 // Chat session schema
 export const ChatSessionSchema = z.object({
