@@ -4,10 +4,11 @@ import asyncio
 import logging
 import os
 
-from camel.toolkits import MCPToolkit, PubMedToolkit
+from camel.toolkits import MCPToolkit
 
 from app.agent.toolkit.audio_analysis_toolkit import AudioAnalysisToolkit
 from app.agent.toolkit.image_analysis_toolkit import ImageAnalysisToolkit
+from app.agent.toolkit.pubmed_toolkit import PubMedToolkit
 from app.agent.toolkit.search_toolkit import SearchToolkit
 from app.agent.toolkit.terminal_toolkit import TerminalToolkit
 from app.agent.toolkit.video_analysis_toolkit import VideoAnalysisToolkit
@@ -27,6 +28,7 @@ async def get_toolkits(tools: list[str], agent_name: str, api_task_id: str):
         "video_analysis_toolkit": VideoAnalysisToolkit,
         "audio_analysis_toolkit": AudioAnalysisToolkit,
         "image_analysis_toolkit": ImageAnalysisToolkit,
+        "pubmed_toolkit": PubMedToolkit,
         "search_toolkit": SearchToolkit,
         "terminal_toolkit": TerminalToolkit,
     }

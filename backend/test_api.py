@@ -50,8 +50,7 @@ def test_model_validation():
         "model_type": MODEL_TYPE,
         "api_key": API_KEY,
         "url": None,
-        "model_config_dict": None,
-        "extra_params": {}
+        "model_config_dict": None
     }
     
     try:
@@ -98,17 +97,9 @@ def test_start_chat_streaming():
         "model_type": MODEL_TYPE,
         "api_key": API_KEY,
         "api_url": None,
-        "language": "en",
-        "browser_port": 9222,
         "max_retries": 3,
-        "allow_local_system": False,
         "installed_mcp": {"mcpServers": {}},
-        "bun_mirror": "",
-        "uvx_mirror": "",
-        "env_path": None,
-        "summary_prompt": "",
-        "extra_params": None,
-        "search_config": None
+        "summary_prompt": ""
     }
     
     print(f"Task ID: {task_id}")
