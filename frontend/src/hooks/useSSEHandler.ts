@@ -197,7 +197,7 @@ export function useSSEHandler() {
   function handleActivateToolkit(data: SSEActivateToolkitEvent['data']) {
     // Toolkit events only have agent_name, not agent_id
     if (isMainAgent(data.agent_name)) {
-      agentStore.setAgentToolkit(data.agent_name, data.toolkit_name, data.method_name);
+      agentStore.setAgentToolkit(data.agent_name, data.toolkit_name, data.method_name, data.message);
       // Only pipe Terminal Toolkit commands into inline terminal output
       if (data.message && data.toolkit_name === 'Terminal Toolkit') {
         const agent = useAgentStatusStore.getState().agents[data.agent_name];
@@ -223,7 +223,7 @@ export function useSSEHandler() {
           data.message
         );
       }
-      agentStore.clearAgentToolkit(data.agent_name);
+      agentStore.clearAgentToolkit(data.agent_name, data.message);
     }
   }
 

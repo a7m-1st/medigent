@@ -44,7 +44,7 @@ export interface UseChatReturn {
   startChat: (data: Chat) => Promise<void>;
   continueChat: (data: SupplementChat) => Promise<void>;
   stopChat: () => Promise<void>;
-  sendHumanReply: (taskId: string, content: string) => Promise<void>;
+  sendHumanReply: (taskId: string, content: string, attaches?: string[]) => Promise<void>;
   sendMessage: (question: string, attaches?: string[], config?: Partial<Chat>) => Promise<void>;
   clearMessages: () => void;
   reset: () => void;
@@ -355,7 +355,7 @@ export function useChat(): UseChatReturn {
   }, [store, cleanupSSE, taskDecompStore, agentStatusStore]);
 
   const sendHumanReply = useCallback(
-    async (taskId: string, content: string) => {
+    async (taskId: string, content: string, attaches?: string[]) => {
       try {
         const projectId = store.currentProjectId;
         if (!projectId) {
@@ -363,10 +363,11 @@ export function useChat(): UseChatReturn {
           return;
         }
 
-        // Backend HumanReply expects { agent: string, reply: string }
+        // Backend HumanReply expects { agent: string, reply: string, attaches?: string[] }
         const data: HumanReply = {
           agent: taskId, // The agent name/id requesting input
           reply: content,
+          attaches: attaches || [],
         };
 
         const validated = HumanReplySchema.safeParse(data);

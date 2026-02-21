@@ -8,7 +8,7 @@ import React, { useRef, useState } from 'react';
 
 interface ModernMessageInputProps {
   onSendMessage: (text: string, images: string[]) => void;
-  onSendHumanReply?: (agent: string, reply: string) => void;
+  onSendHumanReply?: (agent: string, reply: string, attaches?: string[]) => void;
   isLoading: boolean;
   waitingForHumanReply?: boolean;
   currentAskAgent?: string | null;
@@ -51,7 +51,7 @@ export const ModernMessageInput: React.FC<ModernMessageInputProps> = ({
 
     if (waitingForHumanReply && currentAskAgent && onSendHumanReply) {
       // Send human reply to the specific agent
-      await onSendHumanReply(currentAskAgent, message);
+      await onSendHumanReply(currentAskAgent, message, images);
       setMessage('');
       setImages([]);
     } else {

@@ -67,9 +67,19 @@ class HumanToolkit(BaseToolkit, AbstractToolkit):
             )
         )
 
-        reply = await task_lock.get_human_input(self.agent_name)
-        logger.info(f"User reply: {reply}")
-        return reply
+        reply_data = await task_lock.get_human_input(self.agent_name)
+        # Handle both string reply (backward compatibility) and HumanReply object
+        if isinstance(reply_data, dict):
+            reply = reply_data.get("reply", str(reply_data))
+            attaches = reply_data.get("attaches", [])
+            logger.info(f"User reply: {reply}, attaches: {len(attaches)}")
+            if attaches:
+                reply += f"\n\nAttached files: {', '.join(attaches)}"
+            return reply
+        else:
+            # Backward compatibility: if reply_data is a string
+            logger.info(f"User reply: {reply_data}")
+            return str(reply_data)
 
     @listen_toolkit()
     def send_message_to_user(

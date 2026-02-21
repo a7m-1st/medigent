@@ -1,12 +1,12 @@
-import React, { useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { useChat } from '@/hooks/useChat';
+import { cn } from '@/lib/utils';
+import { useChatStore } from '@/stores/chatStore';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Bot, FileText, Info, Sparkles, User } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { ModernMessageInput } from './ModernMessageInput';
-import { useChat } from '@/hooks/useChat';
-import { useChatStore } from '@/stores/chatStore';
-import { Bot, User, Sparkles, Info, FileText } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface LocalMessage {
   id: string;
@@ -71,24 +71,25 @@ export const ModernChatWindow: React.FC = () => {
     await sendMessage(text, images.length > 0 ? images : []);
   };
 
-  const handleSendHumanReply = async (agent: string, reply: string) => {
+  const handleSendHumanReply = async (agent: string, reply: string, attaches?: string[]) => {
     if (!currentAskAgent || !waitingForHumanReply) return;
-    
+
     // Add the reply as a user message locally
     const newMessage: LocalMessage = {
       id: Date.now().toString(),
       role: 'user',
       content: reply,
       timestamp: new Date(),
+      images: attaches && attaches.length > 0 ? attaches : undefined,
     };
-    
+
     setLocalMessages(prev => [...prev, newMessage]);
-    
+
     // Clear the waiting state immediately for better UX
     setWaitingForHumanReply(false, null);
-    
+
     // Send the reply to the backend
-    await sendHumanReply(agent, reply);
+    await sendHumanReply(agent, reply, attaches);
   };
 
   const isProcessing = isStreaming || isLoading;
