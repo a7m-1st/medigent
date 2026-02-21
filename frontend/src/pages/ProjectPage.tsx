@@ -4,7 +4,7 @@ import { ConversationPanel } from '@/components/conversation/ConversationPanel';
 import { ErrorBanner } from '@/components/layout/ErrorBanner';
 import { MonitoringPanel } from '@/components/task-panel/MonitoringPanel';
 import { cn } from '@/lib/utils';
-import { useUIStore } from '@/stores';
+import { useAgentStatusStore, useResourceStore, useTaskDecompStore, useUIStore } from '@/stores';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -16,6 +16,7 @@ import {
   History,
   LayoutDashboard,
   Menu,
+  MessageSquarePlus,
   Monitor,
   Moon,
   PanelRightClose,
@@ -142,11 +143,22 @@ export const ProjectPage: React.FC = () => {
         "w-16 flex-col items-center py-6 border-r border-border bg-sidebar z-50 shrink-0",
         isMobile ? 'hidden' : 'flex'
       )}>
-        <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center mb-10 shadow-glow">
+        <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center mb-6 shadow-glow">
           <LayoutDashboard className="w-6 h-6 text-accent-foreground" />
         </div>
 
         <div className="flex-1 flex flex-col gap-6">
+          <NavIcon
+            icon={<MessageSquarePlus className="w-5 h-5" />}
+            onClick={() => {
+              useChatStore.getState().reset();
+              useAgentStatusStore.getState().reset();
+              useTaskDecompStore.getState().reset();
+              useResourceStore.getState().reset();
+              navigate('/');
+            }}
+            tooltip="New Chat"
+          />
           <NavIcon
             icon={<History className="w-5 h-5" />}
             onClick={() => navigate('/history')}

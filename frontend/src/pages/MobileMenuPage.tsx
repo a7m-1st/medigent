@@ -7,6 +7,7 @@ import {
   HelpCircle,
   History,
   LayoutDashboard,
+  MessageSquarePlus,
   Monitor,
   Moon,
   PanelRightOpen,
@@ -38,9 +39,9 @@ export const MobileMenuPage: React.FC = () => {
 
   const menuItems = [
     {
-      icon: <LayoutDashboard className="w-5 h-5" />,
-      label: 'Home',
-      description: 'Return to dashboard',
+      icon: <MessageSquarePlus className="w-5 h-5" />,
+      label: 'New Chat',
+      description: 'Start a new conversation',
       onClick: () => {
         useChatStore.getState().reset();
         useAgentStatusStore.getState().reset();
@@ -64,10 +65,10 @@ export const MobileMenuPage: React.FC = () => {
     {
       icon: <Settings className="w-5 h-5" />,
       label: 'Configure API Key',
-      description: 'Reset your API configuration',
+      description: 'Manage your API configuration',
       onClick: () => {
-        useApiConfigStore.getState().clearApiKey();
-        navigate('/');
+        useApiConfigStore.getState().setModalOpen(true);
+        navigate(-1);
       },
     },
     {

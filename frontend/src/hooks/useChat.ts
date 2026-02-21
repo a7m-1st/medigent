@@ -92,7 +92,7 @@ export function useChat(): UseChatReturn {
   }, []); // Empty deps - only run on unmount
 
   const startChat = useCallback(
-    async (data: Chat) => {
+    async (data: Chat, options?: { preserveMessages?: boolean }) => {
       console.log('[useChat] startChat called with data:', data);
       try {
         console.log('[useChat] Starting validation...');
@@ -120,16 +120,17 @@ export function useChat(): UseChatReturn {
         store.setLoading(true);
         store.setError(null);
 
-        // Preserve the user message that was optimistically added by the caller
-        // before clearing old conversation state for the new session.
-        // Must use getState() to read the latest store snapshot — the `store`
-        // variable captured by useCallback holds stale values from the last render.
-        const freshMessages = useChatStore.getState().messages;
-        const lastUserMessage = [...freshMessages].reverse().find(m => m.role === 'user');
-        store.clearMessages();
-        if (lastUserMessage) {
-          store.addMessage(lastUserMessage);
+        if (!options?.preserveMessages) {
+          // Fresh session: preserve only the latest user message
+          const freshMessages = useChatStore.getState().messages;
+          const lastUserMessage = [...freshMessages].reverse().find(m => m.role === 'user');
+          store.clearMessages();
+          if (lastUserMessage) {
+            store.addMessage(lastUserMessage);
+          }
         }
+        // When preserveMessages is true (follow-up in same project),
+        // keep all existing messages intact — new responses will append.
 
         store.setCurrentProject(data.project_id);
         if (data.task_id) {
@@ -267,8 +268,11 @@ export function useChat(): UseChatReturn {
           }
         : config?.secondary_agent;
 
-      const newTaskId = taskId || `task-${Date.now()}`;
+      // Always generate a fresh taskId per turn (old task_lock is
+      // deleted by backend when the previous SSE stream ends).
+      const newTaskId = `task-${Date.now()}`;
       const newProjectId = projectId || `project-${Date.now()}`;
+      const isFollowUp = !!projectId;
 
       // Auto-create project in projectStore if it doesn't exist yet
       const projectStore = useProjectStore.getState();
@@ -277,6 +281,26 @@ export function useChat(): UseChatReturn {
       }
       // Track the taskId in the project
       projectStore.addTaskToProject(newProjectId, newTaskId);
+
+      // Set initial title from first user message (task_summary_agent
+      // will override with a better title for complex tasks)
+      const existingProject = projectStore.getProjectById(newProjectId);
+      if (existingProject && existingProject.title === 'New Project') {
+        const initialTitle = question.length > 60
+          ? question.slice(0, 57) + '...'
+          : question;
+        projectStore.updateProject(newProjectId, { title: initialTitle });
+      }
+
+      // Persist the user message to projectStore BEFORE SSE starts,
+      // so it's ordered before any agent responses in the persisted list.
+      // addMessageToProject has dedup by message id, so later calls are no-ops.
+      const latestUserMsg = useChatStore.getState().messages
+        .filter(m => m.role === 'user')
+        .pop();
+      if (latestUserMsg) {
+        projectStore.addMessageToProject(newProjectId, latestUserMsg);
+      }
 
       const chatData: Chat = {
         task_id: newTaskId,
@@ -301,7 +325,7 @@ export function useChat(): UseChatReturn {
         use_simulated_tool_calling: false,
         secondary_agent: secondaryAgent ?? null,
       };
-      await startChat(chatData);
+      await startChat(chatData, { preserveMessages: isFollowUp });
     },
     [store, startChat]
   );

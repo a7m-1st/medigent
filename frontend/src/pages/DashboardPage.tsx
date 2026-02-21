@@ -13,6 +13,7 @@ import {
   History,
   LayoutDashboard,
   Menu,
+  MessageSquarePlus,
   Monitor,
   Moon,
   PanelRightClose,
@@ -94,20 +95,22 @@ export const DashboardPage: React.FC = () => {
         "w-16 flex-col items-center py-6 border-r border-border bg-sidebar z-50 shrink-0",
         isMobile ? 'hidden' : 'flex'
       )}>
-        <button
-          onClick={() => {
-            useChatStore.getState().reset();
-            useAgentStatusStore.getState().reset();
-            useTaskDecompStore.getState().reset();
-            useResourceStore.getState().reset();
-            navigate('/');
-          }}
-          className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center mb-10 shadow-glow hover:opacity-90 transition-opacity"
-        >
+        <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center mb-6 shadow-glow">
           <LayoutDashboard className="w-6 h-6 text-accent-foreground" />
-        </button>
+        </div>
 
         <div className="flex-1 flex flex-col gap-6">
+          <NavIcon
+            icon={<MessageSquarePlus className="w-5 h-5" />}
+            onClick={() => {
+              useChatStore.getState().reset();
+              useAgentStatusStore.getState().reset();
+              useTaskDecompStore.getState().reset();
+              useResourceStore.getState().reset();
+              navigate('/');
+            }}
+            tooltip="New Chat"
+          />
           <NavIcon icon={<History className="w-5 h-5" />} onClick={() => navigate('/history')} />
           <NavIcon
             icon={<Settings className="w-5 h-5" />}
