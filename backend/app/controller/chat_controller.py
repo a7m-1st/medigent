@@ -17,6 +17,7 @@ from app.model.chat import (
     SupplementChat,
     sse_json,
 )
+from app.utils.file_utils import get_working_directory, process_attaches
 from app.service.chat_service import step_solve
 from app.service.task import (
     Action,
@@ -371,10 +372,22 @@ def stop(id: str):
 def human_reply(id: str, data: HumanReply):
     chat_logger.info(
         "Human reply received",
-        extra={"task_id": id, "reply_length": len(data.reply)},
+        extra={"task_id": id, "reply_length": len(data.reply), "attaches_count": len(data.attaches)},
     )
     task_lock = get_task_lock(id)
-    asyncio.run(task_lock.put_human_input(data.agent, data.reply))
+
+    # Process attachments: convert base64 images to file paths
+    if data.attaches:
+        working_directory = get_working_directory(None, task_lock)
+        processed_attaches = process_attaches(data.attaches, working_directory)
+        chat_logger.info(
+            "Processed human reply attachments",
+            extra={"task_id": id, "processed_count": len(processed_attaches)},
+        )
+        # Update the data with processed file paths
+        data.attaches = processed_attaches
+
+    asyncio.run(task_lock.put_human_input(data.agent, data))
     chat_logger.debug("Human reply processed", extra={"task_id": id})
     return Response(status_code=201)
 

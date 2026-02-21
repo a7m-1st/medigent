@@ -161,6 +161,7 @@ class SupplementChat(BaseModel):
 class HumanReply(BaseModel):
     agent: str
     reply: str
+    attaches: list[str] = []
 
 
 class TaskContent(BaseModel):

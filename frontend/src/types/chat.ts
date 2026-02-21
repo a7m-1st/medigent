@@ -64,6 +64,7 @@ export type SupplementChat = z.infer<typeof SupplementChatSchema>;
 export const HumanReplySchema = z.object({
   agent: z.string(),
   reply: z.string().min(1),
+  attaches: z.array(z.string()).default([]),
 });
 export type HumanReply = z.infer<typeof HumanReplySchema>;
 

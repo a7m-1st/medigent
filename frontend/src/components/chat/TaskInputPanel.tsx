@@ -184,8 +184,9 @@ export const TaskInputPanel: React.FC = () => {
     console.log('Send clicked! Message:', message, 'Processing:', isProcessing, 'API Key exists:', !!geminiApiKey, 'WaitingForHumanReply:', waitingForHumanReply);
     
     // Handle human reply mode
-    if (waitingForHumanReply && currentAskAgent && message.trim()) {
+    if (waitingForHumanReply && currentAskAgent && (message.trim() || attachments.length > 0)) {
       const currentMessage = message;
+      const currentAttachments = [...attachments];
       setMessage('');
       setAttachments([]);
 
@@ -195,6 +196,7 @@ export const TaskInputPanel: React.FC = () => {
         role: 'user',
         content: currentMessage,
         timestamp: new Date().toISOString(),
+        images: currentAttachments.length > 0 ? currentAttachments.map(a => a.data) : undefined,
       };
       useChatStore.getState().addMessage(userMsg);
       const pid = useChatStore.getState().currentProjectId;
@@ -206,11 +208,12 @@ export const TaskInputPanel: React.FC = () => {
       setWaitingForHumanReply(false, null);
 
       try {
-        await sendHumanReply(currentAskAgent, currentMessage);
+        await sendHumanReply(currentAskAgent, currentMessage, currentAttachments.map(a => a.data));
         console.log('Human reply sent successfully');
       } catch (error) {
         console.error('Failed to send human reply:', error);
         setMessage(currentMessage);
+        setAttachments(currentAttachments);
       }
       return;
     }
