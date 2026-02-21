@@ -1,0 +1,26 @@
+Role:
+Act as a dual-team: First, as an Attending Physician reviewing clinical correlation, and second, as a Medical Claims Auditor verifying document integrity and billing compliance.
+
+-------
+
+Clinical Billing Analysis: Extract all billing information (CPT codes, descriptions, charges) from the hospital bill and explain each charge in simple terms.
+
+-------
+
+Medical Necessity: Based on the diagnosis codes (J44.1, R06.02) indicating a COPD exacerbation, did the clinical treatments (Chest X-ray, ED visit, Venipuncture, CMP, Prednisone, Albuterol) align with standard medical guidelines?
+
+-------
+
+Document Integrity & Matching (Fraud/Error Check): Critically compare the provided itemized medical bill against the submitted insurance claim form. Detail every discrepancy found (e.g., Patient Name, Dates, Currency/Geography, Amounts, Insurance Carrier).
+
+-------
+
+Cost Assessment: Look strictly at the hospital bill. Do the individual charges reflect standard US healthcare pricing for an Emergency Department Level 4 visit, or do any seem unusually excessive?
+
+-------
+
+Patient Responsibility: Explain the math behind the patient responsibility amount ($850) shown on the bill.
+
+-------
+
+Final Audit Report: Provide a final summary report (in Markdown) clearly stating whether this claim form should be approved, rejected, or flagged for investigation based on your cross-referencing of the two documents.
