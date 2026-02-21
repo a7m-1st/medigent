@@ -21,9 +21,6 @@ class ValidateModelRequest(BaseModel):
     model_config_dict: dict | None = Field(
         None, description="Model config dict"
     )
-    extra_params: dict | None = Field(
-        None, description="Extra model parameters"
-    )
 
 
 class ValidateModelResponse(BaseModel):
@@ -72,8 +69,6 @@ async def validate_model(request: ValidateModelRequest):
         )
 
     try:
-        extra = request.extra_params or {}
-
         logger.debug(
             "Creating agent for validation",
             extra={"platform": platform, "model_type": model_type},
@@ -84,7 +79,6 @@ async def validate_model(request: ValidateModelRequest):
             api_key=request.api_key,
             url=request.url,
             model_config_dict=request.model_config_dict,
-            **extra,
         )
 
         logger.debug(

@@ -255,17 +255,9 @@ export const TaskInputPanel: React.FC = () => {
           model_type: DEFAULT_MODEL_TYPE,
           api_key: geminiApiKey || "",
           api_url: DEFAULT_MODEL_API_URL,
-          language: "en",
-          browser_port: 9222,
           max_retries: 5,
-          allow_local_system: false,
           installed_mcp: { mcpServers: {} },
-          bun_mirror: "",
-          uvx_mirror: "",
-          env_path: null,
           summary_prompt: "",
-          extra_params: null,
-          search_config: null,
         });
 
         console.log('Message sent successfully');

@@ -81,9 +81,9 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className={cn(
-      "bg-background text-foreground flex",
-      isMobile ? "min-h-screen w-full overflow-y-auto" : "h-screen w-screen overflow-hidden"
-    )}>
+      "bg-background text-foreground w-screen flex",
+      isMobile ? "overflow-y-auto" : "overflow-hidden"
+    )} style={{ height: 'calc(100dvh - env(safe-area-inset-bottom))' }}>
       <ApiKeyModal />
 
       {/* Left Sidebar Navigation - Hidden on mobile */}

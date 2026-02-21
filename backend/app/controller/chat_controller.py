@@ -7,11 +7,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from app.component.environment import sanitize_env_path, set_user_env_path
 from app.model.chat import (
     Chat,
     HumanReply,
@@ -223,31 +221,13 @@ async def post(data: Chat, request: Request):
 
     task_lock = get_or_create_task_lock(data.project_id)
 
-    # Set user-specific environment path for this thread
-    set_user_env_path(data.env_path)
-    # Load environment with validated path
-    safe_env_path = sanitize_env_path(data.env_path)
-    if safe_env_path:
-        load_dotenv(dotenv_path=safe_env_path)
-
     os.environ["file_save_path"] = data.file_save_path()
-    os.environ["browser_port"] = str(data.browser_port)
     if data.api_key:
         os.environ["OPENAI_API_KEY"] = data.api_key
     os.environ["OPENAI_API_BASE_URL"] = (
         data.api_url or "https://api.openai.com/v1"
     )
     os.environ["CAMEL_MODEL_LOG_ENABLED"] = "true"
-
-    # Set user-specific search engine configuration if provided
-    if data.search_config:
-        for key, value in data.search_config.items():
-            if value:
-                os.environ[key] = value
-                chat_logger.debug(
-                    f"Set search config: {key}",
-                    extra={"project_id": data.project_id},
-                )
 
     camel_log = (
         Path.home()

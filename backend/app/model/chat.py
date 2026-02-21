@@ -79,20 +79,9 @@ class Chat(BaseModel):
     api_key: str = ""
     # for cloud version, user don't need to set api_url
     api_url: str | None = None
-    language: str = "en"
-    browser_port: int = 9222
     max_retries: int = 3
-    allow_local_system: bool = False
     installed_mcp: McpServers = {"mcpServers": {}}
-    bun_mirror: str = ""
-    uvx_mirror: str = ""
-    env_path: str | None = None
     summary_prompt: str = DEFAULT_SUMMARY_PROMPT
-    # For provider-specific parameters like Azure
-    extra_params: dict | None = None
-    # User-specific search engine configurations
-    # (e.g., GOOGLE_API_KEY, SEARCH_ENGINE_ID)
-    search_config: dict[str, str] | None = None
     # Check if we need to use simulated tool calling
     # This is useful for models that don't support native function calling
     # like MedGemma, local LLMs, or other open-source models
@@ -148,21 +137,6 @@ class Chat(BaseModel):
             )
         return model_type
 
-    def get_bun_env(self) -> dict[str, str]:
-        return (
-            {"NPM_CONFIG_REGISTRY": self.bun_mirror} if self.bun_mirror else {}
-        )
-
-    def get_uvx_env(self) -> dict[str, str]:
-        return (
-            {
-                "UV_DEFAULT_INDEX": self.uvx_mirror,
-                "PIP_INDEX_URL": self.uvx_mirror,
-            }
-            if self.uvx_mirror
-            else {}
-        )
-
     def file_save_path(self, path: str | None = None):
         # Use project-based structure: project_{project_id}/task_{task_id}
         save_path = (
@@ -206,7 +180,6 @@ class AgentModelConfig(BaseModel):
     model_type: str | None = None
     api_key: str | None = None
     api_url: str | None = None
-    extra_params: dict | None = None
     # Context window size in tokens, passed from AgentConfig (secondary agents).
     # Used as token_limit for CAMEL's auto-compaction.
     model_context_size: int | None = None
@@ -219,7 +192,6 @@ class AgentModelConfig(BaseModel):
                 self.model_type is not None,
                 self.api_key is not None,
                 self.api_url is not None,
-                self.extra_params is not None,
             ]
         )
 
@@ -229,7 +201,6 @@ class NewAgent(BaseModel):
     description: str
     tools: list[str]
     mcp_tools: McpServers | None
-    env_path: str | None = None
     custom_model_config: AgentModelConfig | None = None
 
 
