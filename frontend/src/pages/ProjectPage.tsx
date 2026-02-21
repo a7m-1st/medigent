@@ -133,7 +133,7 @@ export const ProjectPage: React.FC = () => {
   }
 
   return (
-    <div className="h-screen w-screen bg-background text-foreground flex overflow-hidden">
+    <div className="w-screen bg-background text-foreground flex overflow-hidden" style={{ height: 'calc(100dvh - env(safe-area-inset-bottom))' }}>
       {/* Left Sidebar Navigation - Hidden on mobile */}
       <aside className={cn(
         "w-16 flex-col items-center py-6 border-r border-border bg-sidebar z-50 shrink-0",
