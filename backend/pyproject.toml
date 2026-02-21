@@ -19,7 +19,9 @@ dependencies = [
     "openai>=1.99.3,<2",
     "nodejs-wheel>=22.18.0",
     "numpy>=1.23.0,<2.0.0",
-    "debugpy>=1.8.17"
+    "debugpy>=1.8.17",
+    "markitdown>=0.1.5",
+    "pdfplumber>=0.11.9",
 ]
 
 
