@@ -67,8 +67,10 @@ export const MobileMenuPage: React.FC = () => {
       label: 'Configure API Key',
       description: 'Manage your API configuration',
       onClick: () => {
-        useApiConfigStore.getState().setModalOpen(true);
         navigate(-1);
+        setTimeout(() => {
+          useApiConfigStore.getState().setModalOpen(true);
+        }, 100);
       },
     },
     {
