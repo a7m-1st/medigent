@@ -3,6 +3,7 @@
 import platform
 
 from camel.messages import BaseMessage
+from camel.models import ModelFactory
 from camel.toolkits import ToolkitMessageIntegration
 
 from app.agent.agent_model import agent_model
@@ -12,6 +13,7 @@ from app.agent.toolkit.document_analysis_toolkit import (
     DocumentAnalysisToolkit,
 )
 from app.agent.toolkit.human_toolkit import HumanToolkit
+from app.agent.toolkit.image_analysis_toolkit import ImageAnalysisToolkit
 from app.agent.toolkit.note_taking_toolkit import NoteTakingToolkit
 from app.agent.utils import NOW_STR
 from app.model.chat import AgentConfig, Chat
@@ -44,6 +46,14 @@ async def chief_of_medicine_agent(options: Chat):
         ).send_message_to_user
     )
     
+    # Create model for image analysis toolkit
+    toolkit_model = ModelFactory.create(
+        model_platform=effective_config.model_platform.lower() if effective_config.model_platform else options.model_platform.lower(),
+        model_type=effective_config.model_type if effective_config.model_type else options.model_type,
+        api_key=effective_config.api_key if effective_config.api_key else options.api_key,
+        url=effective_config.api_url if effective_config.api_url else options.api_url,
+    )
+    
     note_toolkit = NoteTakingToolkit(
         api_task_id=options.project_id,
         agent_name=Agents.chief_of_medicine,
@@ -60,12 +70,22 @@ async def chief_of_medicine_agent(options: Chat):
         document_analysis_toolkit
     )
     
+    image_analysis_toolkit = ImageAnalysisToolkit(
+        api_task_id=options.project_id,
+        model=toolkit_model,
+    )
+    image_analysis_toolkit.agent_name = Agents.chief_of_medicine
+    image_analysis_toolkit = message_integration.register_toolkits(
+        image_analysis_toolkit
+    )
+    
     tools = [
         *HumanToolkit.get_can_use_tools(
             options.project_id, Agents.chief_of_medicine
         ),
         *note_toolkit.get_tools(),
         *document_analysis_toolkit.get_tools(),
+        *image_analysis_toolkit.get_tools(),
     ]
     
     system_message = CHIEF_OF_MEDICINE_PROMPT.format(
@@ -96,6 +116,7 @@ async def chief_of_medicine_agent(options: Chat):
             HumanToolkit.toolkit_name(),
             NoteTakingToolkit.toolkit_name(),
             DocumentAnalysisToolkit.toolkit_name(),
+            ImageAnalysisToolkit.toolkit_name(),
         ],
         support_native_tool_calling=not options.use_simulated_tool_calling,
         custom_model_config=custom_config,
