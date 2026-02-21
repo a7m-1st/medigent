@@ -40,8 +40,21 @@ register_routers(api)
 # Serve static files from the frontend build
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_dir):
+    # Mount static files without html=True - will only serve actual files, not directories
     api.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
+    # Catch-all route for SPA - serves index.html for any non-file routes
+    # This must be added after all other routes (including API routes)
     @api.get("/{path:path}")
-    async def catch_all(path: str):
+    async def serve_spa(path: str):
+        # Check if path is for an actual file (has extension)
+        if os.path.splitext(path)[1]:
+            # It's a file request - let static files handle it or return 404
+            file_path = os.path.join(static_dir, path)
+            if os.path.exists(file_path):
+                return FileResponse(file_path)
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        # For non-file paths, serve index.html (SPA routing)
         return FileResponse(os.path.join(static_dir, "index.html"))
