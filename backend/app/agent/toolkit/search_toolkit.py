@@ -87,14 +87,14 @@ class SearchToolkit(BaseSearchToolkit, AbstractToolkit):
         lambda _,
         query,
         search_type="web",
-        number_of_result_pages=10,
+        number_of_result_pages=2,
         start_page=1: f"with query '{query}', {search_type} type, {number_of_result_pages} result pages starting from page {start_page}",
     )
     def search_google(
         self,
         query: str,
         search_type: str = "web",
-        number_of_result_pages: int = 10,
+        number_of_result_pages: int = 2,
         start_page: int = 1,
     ) -> list[dict[str, Any]]:
         # Load user-specific configuration
@@ -137,7 +137,7 @@ class SearchToolkit(BaseSearchToolkit, AbstractToolkit):
         self,
         query: str,
         search_type: str = "web",
-        number_of_result_pages: int = 10,
+        number_of_result_pages: int = 2,
         start_page: int = 1,
     ):
         url = env_not_empty("SERVER_URL")

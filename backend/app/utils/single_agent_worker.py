@@ -64,7 +64,8 @@ def _build_simulated_tool_call_prompt(
             'Example: {"content": "Task completed.", "failed": false}\n'
         )
 
-    tools_json = json.dumps(tool_descriptions, indent=2)
+    # Use compact JSON to save tokens (no indent, no extra spaces)
+    tools_json = json.dumps(tool_descriptions, separators=(',', ':'))
 
     # Build a prompt that FRONT-LOADS the tool calling instructions
     # so small models (like MedGemma 4B) see them early and follow them.
@@ -95,7 +96,8 @@ Begin by calling your first tool now. Your response must be ONLY a <tool_call> b
     )
 
 
-    tools_json = json.dumps(tool_descriptions, indent=2)
+    # Use compact JSON to save tokens (no indent, no extra spaces)
+    tools_json = json.dumps(tool_descriptions, separators=(',', ':'))
     return (
         base_task_prompt
         + f"""

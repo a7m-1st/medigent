@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { useAgentStatusStore, MAIN_AGENT_NAMES, MEDGEMMA_AGENTS, type AgentStatus } from '@/stores/agentStatusStore';
+import { useAgentStatusStore, MAIN_AGENT_NAMES, MEDGEMMA_AGENTS, type AgentStatus, type ActivityEntry } from '@/stores/agentStatusStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Bot,
@@ -18,6 +18,7 @@ import {
   Wrench,
   MessageSquare,
   Clock,
+  Terminal,
 } from 'lucide-react';
 import React, { useState } from 'react';
 
@@ -265,37 +266,26 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent }) => {
 
               {/* Activity Log */}
               {agent.activityLog.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <Clock className="w-3 h-3 text-foreground-muted" />
-                    <span className="text-[10px] font-semibold text-foreground-muted uppercase tracking-wide">
-                      Activity ({agent.activityLog.length})
-                    </span>
+                <div className="flex flex-col mt-2 border-t border-border/50 pt-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="w-3 h-3 text-foreground-muted" />
+                      <span className="text-[10px] font-semibold text-foreground-muted uppercase tracking-wide">
+                        Activity Timeline ({agent.activityLog.length})
+                      </span>
+                    </div>
                   </div>
-                  <div className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar">
-                    {agent.activityLog.slice(-5).reverse().map((entry) => (
-                      <div
-                        key={entry.id}
-                        className="flex items-start gap-2 text-[10px] py-1"
-                      >
-                        <span className="text-foreground-muted shrink-0">
-                          {entry.timestamp.toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                          })}
-                        </span>
-                        <span
-                          className={cn(
-                            'truncate',
-                            entry.type === 'error' ? 'text-error' :
-                            entry.type === 'toolkit_start' || entry.type === 'toolkit_end' ? 'text-accent' :
-                            'text-foreground-secondary'
-                          )}
-                        >
-                          {entry.message}
-                        </span>
-                      </div>
+                  
+                  <div className="relative pl-1 max-h-72 overflow-y-auto custom-scrollbar pr-2">
+                    {/* Vertical timeline line */}
+                    <div className="absolute left-[11px] top-2 bottom-4 w-px bg-border/60" />
+                    
+                    {agent.activityLog.map((entry, idx) => (
+                      <ActivityItem 
+                        key={entry.id} 
+                        entry={entry} 
+                        isLast={idx === agent.activityLog.length - 1} 
+                      />
                     ))}
                   </div>
                 </div>
@@ -305,5 +295,126 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent }) => {
         )}
       </AnimatePresence>
     </motion.div>
+  );
+};
+
+// ============================================
+// Activity Timeline Components
+// ============================================
+
+function formatJson(str: string) {
+  if (!str) return '';
+  try {
+    const parsed = JSON.parse(str);
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return str;
+  }
+}
+
+const ActivityItem: React.FC<{ entry: ActivityEntry; isLast: boolean }> = ({ entry, isLast }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  let icon = <Circle className="w-3 h-3 text-foreground-muted" />;
+  let colorClass = "text-foreground-secondary";
+
+  if (entry.type === 'error') {
+    icon = <AlertCircle className="w-3 h-3 text-error" />;
+    colorClass = "text-error";
+  } else if (entry.type === 'toolkit_start') {
+    icon = <Wrench className="w-3 h-3 text-accent" />;
+    colorClass = "text-foreground font-medium";
+  } else if (entry.type === 'toolkit_end') {
+    icon = <CheckCircle2 className="w-3 h-3 text-success" />;
+    colorClass = "text-success";
+  } else if (entry.type === 'activated' || entry.type === 'deactivated') {
+    icon = <Bot className="w-3 h-3 text-foreground-muted" />;
+  }
+
+  const hasMetadata = entry.metadata && (entry.metadata.args || entry.metadata.result);
+  
+  // Clean up error message to not show the massive JSON inline
+  const isError = entry.type === 'error';
+  const displayMessage = isError && entry.message.includes('Error code:') 
+    ? 'Error: ' + entry.message.split(' - ')[0]
+    : entry.message;
+
+  const isLongMessage = !isError && displayMessage.length > 80;
+  const isExpandable = hasMetadata || isError || isLongMessage;
+  const titleMessage = isLongMessage ? displayMessage.slice(0, 80) + '...' : displayMessage;
+
+  return (
+    <div className="relative flex items-start gap-3">
+      {/* Icon background to cover the timeline line */}
+      <div className="bg-background-secondary p-0.5 rounded-full z-10 mt-0.5 ring-2 ring-background-secondary">
+        {icon}
+      </div>
+      
+      <div className="flex-1 min-w-0 pb-4">
+        <div 
+          className={cn(
+            "flex flex-col text-[10px]",
+            isExpandable ? "cursor-pointer hover:bg-background-tertiary rounded p-1 -ml-1 -mt-1 transition-colors" : ""
+          )}
+          onClick={() => isExpandable && setExpanded(!expanded)}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className={cn("truncate", colorClass)}>
+              {titleMessage}
+            </span>
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-foreground-muted text-[9px]">
+                {entry.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+              {isExpandable && (
+                expanded ? <ChevronDown className="w-3 h-3 text-foreground-muted" /> : <ChevronRight className="w-3 h-3 text-foreground-muted" />
+              )}
+            </div>
+          </div>
+          
+          {/* Expanded Metadata */}
+          <AnimatePresence>
+            {expanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div 
+                  className="mt-1.5 p-2 bg-background rounded border border-border overflow-x-auto max-w-full text-[10px] font-mono whitespace-pre-wrap max-h-64 custom-scrollbar" 
+                  onClick={e => e.stopPropagation()}
+                >
+                  {entry.metadata?.args && (
+                    <div className="text-accent/80">
+                      <span className="font-bold text-accent">Arguments:</span>
+                      <br/>
+                      {formatJson(entry.metadata.args)}
+                    </div>
+                  )}
+                  {entry.metadata?.result && (
+                    <div className="text-foreground-muted mt-1">
+                      <span className="font-bold text-success">Result:</span>
+                      <br/>
+                      {formatJson(entry.metadata.result)}
+                    </div>
+                  )}
+                  {isError && !hasMetadata && (
+                    <div className="text-error/80">
+                      {entry.message}
+                    </div>
+                  )}
+                  {isLongMessage && !hasMetadata && !isError && (
+                    <div className={colorClass}>
+                      {entry.message}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    </div>
   );
 };

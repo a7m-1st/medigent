@@ -11,6 +11,7 @@ export const ActivityEntrySchema = z.object({
   type: z.enum(['created', 'activated', 'deactivated', 'toolkit_start', 'toolkit_end', 'error', 'notice']),
   message: z.string(),
   timestamp: z.date(),
+  metadata: z.any().optional(),
 });
 
 export type ActivityEntry = z.infer<typeof ActivityEntrySchema>;
@@ -90,8 +91,8 @@ interface AgentStatusState {
   setAgentWorking: (agentName: string, agentId: string, taskId: string, content: string) => void;
   setAgentCompleted: (agentName: string, agentId: string, message: string, tokens?: number) => void;
   setAgentError: (agentName: string, error: string) => void;
-  setAgentToolkit: (agentName: string, toolkit: string, method: string) => void;
-  clearAgentToolkit: (agentName: string) => void;
+  setAgentToolkit: (agentName: string, toolkit: string, method: string, argsMessage?: string) => void;
+  clearAgentToolkit: (agentName: string, resultMessage?: string) => void;
   addAgentActivity: (agentName: string, type: ActivityEntry['type'], message: string) => void;
   registerAgentId: (agentName: string, agentId: string) => void;
   reset: () => void;
@@ -102,7 +103,7 @@ interface AgentStatusState {
   getMainAgents: () => AgentStatus[];
 }
 
-const MAX_ACTIVITY_LOG = 50;
+const MAX_ACTIVITY_LOG = 1000;
 
 export const useAgentStatusStore = create<AgentStatusState>()(
   immer((set, get) => ({
@@ -195,7 +196,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
           state.agents[agentName].activityLog.push({
             id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
             type: 'activated',
-            message: `Working on task: ${content.slice(0, 100)}...`,
+            message: `Working on task: ${content}`,
             timestamp: new Date(),
           });
           if (state.agents[agentName].activityLog.length > MAX_ACTIVITY_LOG) {
@@ -232,7 +233,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
           state.agents[agentName].activityLog.push({
             id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
             type: isError ? 'error' : 'deactivated',
-            message: isError ? `Error: ${message.slice(0, 150)}` : `Task completed${tokens ? ` (${tokens} tokens)` : ''}`,
+            message: isError ? `Error: ${message}` : `Task completed${tokens ? ` (${tokens} tokens)` : ''}`,
             timestamp: new Date(),
           });
           if (state.agents[agentName].activityLog.length > MAX_ACTIVITY_LOG) {
@@ -254,7 +255,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
           state.agents[agentName].activityLog.push({
             id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
             type: 'error',
-            message: error.slice(0, 150),
+            message: error,
             timestamp: new Date(),
           });
           if (state.agents[agentName].activityLog.length > MAX_ACTIVITY_LOG) {
@@ -267,7 +268,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
     /**
      * Set current toolkit being used by agent (looked up by name)
      */
-    setAgentToolkit: (agentName: string, toolkit: string, method: string) => {
+    setAgentToolkit: (agentName: string, toolkit: string, method: string, argsMessage?: string) => {
       set((state) => {
         if (state.agents[agentName]) {
           state.agents[agentName].currentToolkit = toolkit;
@@ -279,6 +280,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
             type: 'toolkit_start',
             message: `Using ${toolkit} -> ${method}`,
             timestamp: new Date(),
+            metadata: { args: argsMessage },
           });
           if (state.agents[agentName].activityLog.length > MAX_ACTIVITY_LOG) {
             state.agents[agentName].activityLog = state.agents[agentName].activityLog.slice(-MAX_ACTIVITY_LOG);
@@ -290,7 +292,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
     /**
      * Clear current toolkit when done
      */
-    clearAgentToolkit: (agentName: string) => {
+    clearAgentToolkit: (agentName: string, resultMessage?: string) => {
       set((state) => {
         if (state.agents[agentName]) {
           const prevToolkit = state.agents[agentName].currentToolkit;
@@ -304,6 +306,7 @@ export const useAgentStatusStore = create<AgentStatusState>()(
               type: 'toolkit_end',
               message: `Finished ${prevToolkit}${prevMethod ? ` -> ${prevMethod}` : ''}`,
               timestamp: new Date(),
+              metadata: { result: resultMessage },
             });
             if (state.agents[agentName].activityLog.length > MAX_ACTIVITY_LOG) {
               state.agents[agentName].activityLog = state.agents[agentName].activityLog.slice(-MAX_ACTIVITY_LOG);
