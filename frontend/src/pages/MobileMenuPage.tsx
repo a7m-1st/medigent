@@ -10,9 +10,8 @@ import {
   MessageSquarePlus,
   Monitor,
   Moon,
-  PanelRightOpen,
   Settings,
-  Sun,
+  Sun
 } from 'lucide-react';
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -56,12 +55,12 @@ export const MobileMenuPage: React.FC = () => {
       description: 'View conversation history',
       onClick: () => navigate('/history'),
     },
-    {
-      icon: <PanelRightOpen className="w-5 h-5" />,
-      label: 'Monitoring Panel',
-      description: 'View task monitoring and agent activity',
-      onClick: () => navigate('/?panel=open'),
-    },
+    // {
+    //   icon: <PanelRightOpen className="w-5 h-5" />,
+    //   label: 'Monitoring Panel',
+    //   description: 'View task monitoring and agent activity',
+    //   onClick: () => navigate('/?panel=open'),
+    // },
     {
       icon: <Settings className="w-5 h-5" />,
       label: 'Configure API Key',

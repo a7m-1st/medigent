@@ -1,9 +1,9 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import { cn } from '@/lib/utils';
 import { useChatStore } from '@/stores/chatStore';
+import { Brain, FileSearch, Globe, LayoutDashboard, Stethoscope } from 'lucide-react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { ThinkingIndicator } from './ThinkingIndicator';
-import { LayoutDashboard, Stethoscope, Brain, FileSearch, Globe } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 export const ConversationPanel: React.FC = () => {
   const messages = useChatStore((s) => s.messages);
@@ -59,10 +59,10 @@ export const ConversationPanel: React.FC = () => {
 
 const EmptyState: React.FC = () => {
   const suggestions = [
-    { icon: Stethoscope, text: 'Analyze medical imaging' },
-    { icon: FileSearch, text: 'Search clinical literature' },
-    { icon: Brain, text: 'Draft clinical reports' },
-    { icon: Globe, text: 'Find treatment guidelines' },
+    { icon: Stethoscope, text: 'Analyze medical imaging', prompt: "Please analyze this medical image. Identify any notable findings, potential abnormalities, and provide a detailed assessment based on the visual information available." },
+    { icon: FileSearch, text: 'Search clinical literature', prompt: "Search for recent clinical literature and research papers on the latest evidence-based practices in diagnosis and treatment. Provide summaries of key findings and their clinical implications." },
+    { icon: Brain, text: 'Draft clinical reports', prompt: "Help me draft a comprehensive clinical report. Include sections for patient history, examination findings, assessment, and recommendations in a structured medical format." },
+    { icon: Globe, text: 'Find treatment guidelines', prompt: "Find and summarize current clinical practice guidelines and treatment protocols. Include recommended approaches, dosing considerations, and any relevant updates from major medical organizations." },
   ];
 
   return (
@@ -90,23 +90,23 @@ const EmptyState: React.FC = () => {
 
       {/* Suggestion chips */}
       <div className="mt-8 flex flex-wrap justify-center gap-2 max-w-lg">
-        {suggestions.map((suggestion) => (
-          <button
-            key={suggestion.text}
-            onClick={() => useChatStore.getState().setPendingInput(suggestion.text)}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2.5 rounded-xl",
-              "bg-card border border-card-border",
-              "text-sm text-foreground-secondary",
-              "hover:border-accent hover:text-accent hover:bg-accent-light/50",
-              "transition-all duration-200 cursor-pointer"
-            )}
-          >
-            <suggestion.icon className="w-4 h-4" />
-            {suggestion.text}
-          </button>
-        ))}
-      </div>
+        {suggestions.slice(0, 2).map((suggestion) => (
+            <button
+              key={suggestion.text}
+              onClick={() => useChatStore.getState().setPendingInput(suggestion.prompt)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2.5 rounded-xl",
+                "bg-card border border-card-border",
+                "text-sm text-foreground-secondary",
+                "hover:border-accent hover:text-accent hover:bg-accent-light/50",
+                "transition-all duration-200 cursor-pointer"
+              )}
+            >
+              <suggestion.icon className="w-4 h-4" />
+              {suggestion.text}
+            </button>
+          ))}
+        </div>
     </div>
   );
 };
