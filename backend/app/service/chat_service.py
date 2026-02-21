@@ -1525,11 +1525,12 @@ async def perform_triage(
     )
 
     try:
-        # Perform complexity evaluation
+        # Perform complexity evaluation with conversation context
         result = await evaluate_task_complexity(
             coordinator_agent=triage_agent,
             question=question,
             attachments=attachments if attachments else None,
+            conversation_context=conversation_context,
         )
 
         logger.info(

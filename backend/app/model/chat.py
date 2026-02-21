@@ -68,6 +68,14 @@ class AgentConfig(BaseModel):
             self.api_key,
         ])
 
+class ChatMessage(BaseModel):
+    id: str
+    role: str
+    content: str
+    timestamp: str
+    images: list[str] | None = None
+
+
 class Chat(BaseModel):
     task_id: str
     project_id: str
@@ -90,6 +98,8 @@ class Chat(BaseModel):
     # secondary_agent: For MedGemma 4B agents (Radiologist, Attending Physician, Clinical Pharmacologist)
     # Falls back to Chat global config if not provided
     secondary_agent: AgentConfig | None = None
+    # Conversation history from frontend (last N messages for context)
+    history: list[ChatMessage] = []
 
     @model_validator(mode="before")
     @classmethod

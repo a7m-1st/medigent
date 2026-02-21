@@ -222,6 +222,15 @@ async def post(data: Chat, request: Request):
 
     task_lock = get_or_create_task_lock(data.project_id)
 
+    # Load conversation history from frontend (last N messages for context)
+    if data.history and len(data.history) > 0:
+        for msg in data.history:
+            task_lock.add_conversation(msg.role, msg.content)
+        chat_logger.info(
+            f"Loaded {len(data.history)} messages from frontend into conversation history",
+            extra={"project_id": data.project_id},
+        )
+
     os.environ["file_save_path"] = data.file_save_path()
     if data.api_key:
         os.environ["OPENAI_API_KEY"] = data.api_key

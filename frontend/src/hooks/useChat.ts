@@ -45,7 +45,7 @@ export interface UseChatReturn {
   continueChat: (data: SupplementChat) => Promise<void>;
   stopChat: () => Promise<void>;
   sendHumanReply: (taskId: string, content: string, attaches?: string[]) => Promise<void>;
-  sendMessage: (question: string, attaches?: string[], config?: Partial<Chat>) => Promise<void>;
+  sendMessage: (question: string, attaches?: string[], config?: Partial<Chat>, history?: ChatMessage[]) => Promise<void>;
   clearMessages: () => void;
   reset: () => void;
 }
@@ -240,7 +240,7 @@ export function useChat(): UseChatReturn {
   );
 
   const sendMessage = useCallback(
-    async (question: string, attaches?: string[], config?: Partial<Chat>) => {
+    async (question: string, attaches?: string[], config?: Partial<Chat>, history?: ChatMessage[]) => {
       // Reset wasStopped flag at the start of a new send operation
       store.setWasStopped(false);
       
@@ -316,6 +316,7 @@ export function useChat(): UseChatReturn {
         summary_prompt: config?.summary_prompt || '',
         use_simulated_tool_calling: false,
         secondary_agent: secondaryAgent ?? null,
+        history: history || [],
       };
       await startChat(chatData, { preserveMessages: isFollowUp });
     },
