@@ -32,6 +32,19 @@ export const ConversationPanel: React.FC = () => {
     }
   }, [messages.length, isStreaming]);
 
+  // Handle viewport resize (mobile keyboard appearance)
+  useEffect(() => {
+    const handleResize = () => {
+      // Re-scroll to bottom when viewport changes (keyboard opens/closes)
+      if (!isUserScrolledUp.current && messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
     <div
       ref={scrollContainerRef}

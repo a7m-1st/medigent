@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+/* Viewport fix for mobile browsers - prevents page break when keyboard appears */
+:root {
+  --vh: 1vh;
+  --dvh: 1dvh;
+}
+
+/* Ensure proper viewport behavior on mobile */
+@supports (height: 100dvh) {
+  :root {
+    --vh: 1dvh;
+  }
+}
+
 @theme {
   --font-sans: system-ui, Avenir, Helvetica, Arial, sans-serif;
 
@@ -200,6 +213,14 @@
 }
 
 /* Base styles */
+html {
+  /* Prevent text size adjustment on orientation change */
+  -webkit-text-size-adjust: 100%;
+  /* Ensure proper viewport on mobile */
+  height: 100%;
+  height: 100svh;
+}
+
 body {
   margin: 0;
   padding: 0;
@@ -207,11 +228,16 @@ body {
   background-color: var(--bg);
   color: var(--fg);
   transition: background-color 0.3s ease, color 0.3s ease;
+  /* Fix for mobile browsers - use small viewport height for stable layout */
+  min-height: 100svh;
+  /* Prevent pull-to-refresh and other touch gestures from breaking layout */
+  overscroll-behavior: none;
 }
 
 #root {
   width: 100vw;
-  height: 100vh;
+  height: 100dvh; /* Use dynamic viewport height for mobile */
+  height: 100vh; /* Fallback for older browsers */
 }
 
 /* Custom scrollbar */
@@ -445,4 +471,42 @@ body {
 
 .markdown-content th {
   background-color: var(--bg-secondary);
+}
+
+/* Mobile viewport utilities to prevent page break */
+@layer utilities {
+  /* Dynamic viewport height utilities */
+  .h-screen-safe {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  .h-screen-small {
+    height: 100vh;
+    height: 100svh;
+  }
+
+  /* Min-height variants */
+  .min-h-screen-safe {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  .min-h-screen-small {
+    min-height: 100vh;
+    min-height: 100svh;
+  }
+
+  /* Max-height variants */
+  .max-h-screen-safe {
+    max-height: 100vh;
+    max-height: 100dvh;
+  }
+
+  /* Mobile scroll containment */
+  .mobile-scroll-stable {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
 }

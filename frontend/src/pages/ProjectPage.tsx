@@ -87,7 +87,9 @@ export const ProjectPage: React.FC = () => {
     };
   }, [project?.title]);
 
-  // Handle responsive layout
+  // Handle responsive layout and viewport changes (mobile keyboard, address bar hiding)
+  const [, forceUpdate] = React.useReducer((x: number) => x + 1, 0);
+  
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < MOBILE_BREAKPOINT;
@@ -100,8 +102,29 @@ export const ProjectPage: React.FC = () => {
 
     handleResize();
     window.addEventListener('resize', handleResize);
-    
-    return () => window.removeEventListener('resize', handleResize);
+
+    // Handle viewport changes on mobile (keyboard appearance, address bar hiding)
+    const handleVisualViewportResize = () => {
+      if (window.visualViewport) {
+        // Update CSS variable with actual visual viewport height
+        const vh = window.visualViewport.height * 0.01;
+        document.documentElement.style.setProperty('--vh', `${vh}px`);
+        // Force re-render to ensure layout updates
+        forceUpdate();
+      }
+    };
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleVisualViewportResize);
+      handleVisualViewportResize();
+    }
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleVisualViewportResize);
+      }
+    };
   }, [rightSidebarOpen]);
 
   const cycleTheme = () => {
@@ -133,7 +156,10 @@ export const ProjectPage: React.FC = () => {
   }
 
   return (
-    <div className="w-screen bg-background text-foreground flex overflow-hidden" style={{ height: 'calc(100dvh - env(safe-area-inset-bottom))' }}>
+    <div 
+      className="fixed inset-0 w-screen bg-background text-foreground flex overflow-hidden"
+      style={{ height: '100svh' }}
+    >
       {/* Left Sidebar Navigation - Hidden on mobile */}
       <aside className={cn(
         "w-16 flex-col items-center py-6 border-r border-border bg-sidebar z-50 shrink-0",
