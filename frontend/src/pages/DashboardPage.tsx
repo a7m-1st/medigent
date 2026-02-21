@@ -111,7 +111,8 @@ export const DashboardPage: React.FC = () => {
           <NavIcon icon={<History className="w-5 h-5" />} onClick={() => navigate('/history')} />
           <NavIcon
             icon={<Settings className="w-5 h-5" />}
-            onClick={() => useApiConfigStore.getState().clearApiKey()}
+            onClick={() => useApiConfigStore.getState().setModalOpen(true)}
+            tooltip="API Config"
           />
           <Link to="/thank-you">
             <NavIcon icon={<HelpCircle className="w-5 h-5" />} />

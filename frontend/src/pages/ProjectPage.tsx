@@ -270,9 +270,9 @@ export const ProjectPage: React.FC = () => {
           <AnimatePresence>
             {rightSidebarOpen && (
               <motion.aside
-                initial={isMobile ? { x: '100%', opacity: 0 } : { x: 420, opacity: 0 }}
-                animate={isMobile ? { x: 0, opacity: 1 } : { x: 0, opacity: 1 }}
-                exit={isMobile ? { x: '100%', opacity: 0 } : { x: 420, opacity: 0 }}
+                initial={isMobile ? { x: '100%', opacity: 0 } : { width: 0, opacity: 0 }}
+                animate={isMobile ? { x: 0, opacity: 1 } : { width: 420, opacity: 1 }}
+                exit={isMobile ? { x: '100%', opacity: 0 } : { width: 0, opacity: 0 }}
                 transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
                 className={cn(
                   "bg-background border-l border-border flex flex-col shrink-0 overflow-hidden",

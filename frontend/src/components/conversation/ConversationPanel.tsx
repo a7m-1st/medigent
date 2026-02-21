@@ -93,12 +93,13 @@ const EmptyState: React.FC = () => {
         {suggestions.map((suggestion) => (
           <button
             key={suggestion.text}
+            onClick={() => useChatStore.getState().setPendingInput(suggestion.text)}
             className={cn(
               "flex items-center gap-2 px-4 py-2.5 rounded-xl",
               "bg-card border border-card-border",
               "text-sm text-foreground-secondary",
               "hover:border-accent hover:text-accent hover:bg-accent-light/50",
-              "transition-all duration-200 cursor-default"
+              "transition-all duration-200 cursor-pointer"
             )}
           >
             <suggestion.icon className="w-4 h-4" />
