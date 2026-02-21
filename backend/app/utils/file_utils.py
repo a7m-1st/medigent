@@ -16,13 +16,8 @@ logger = logging.getLogger("file_utils")
 def get_working_directory(options: Chat, task_lock=None) -> str:
     """
     Get the correct working directory for file operations.
-    First checks if there's an updated path from improve API call,
-    then falls back to environment variable or default path.
+    Environment variable or default path.
     """
-    if not task_lock:
-        from app.service.task import get_task_lock_if_exists
-
-        task_lock = get_task_lock_if_exists(options.project_id)
 
     default_path = options.file_save_path() if options else "uploads"
     return env("file_save_path", default_path)
