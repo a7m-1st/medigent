@@ -381,7 +381,11 @@ def stop(id: str):
 def human_reply(id: str, data: HumanReply):
     chat_logger.info(
         "Human reply received",
-        extra={"task_id": id, "reply_length": len(data.reply), "attaches_count": len(data.attaches)},
+        extra={
+            "task_id": id,
+            "reply_length": len(data.reply),
+            "attaches_count": len(data.attaches),
+        },
     )
     task_lock = get_task_lock(id)
 
