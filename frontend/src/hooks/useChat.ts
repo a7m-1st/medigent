@@ -190,6 +190,7 @@ export function useChat(): UseChatReturn {
           if (lastUserMessage) {
             store.addMessage(lastUserMessage);
           }
+          agentStatusStore.reset();
         }
 
         store.setCurrentProject(data.project_id);
@@ -197,8 +198,7 @@ export function useChat(): UseChatReturn {
           store.setCurrentTask(data.task_id);
         }
 
-        // Reset related stores for a fresh session
-        agentStatusStore.reset();
+        // Reset task-specific related stores for a fresh session
         taskDecompStore.reset();
         resourceStore.reset();
 

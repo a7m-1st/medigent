@@ -139,27 +139,16 @@ async def websocket_chat(ws: WebSocket):
 
                 options = data
 
-                # Cancel previous consumer if a new chat starts on the
-                # same socket (follow-up in same project).
-                if sse_consumer_task and not sse_consumer_task.done():
-                    sse_consumer_task.cancel()
-                    try:
-                        await sse_consumer_task
-                    except (asyncio.CancelledError, Exception):
-                        pass
-
                 task_lock = get_or_create_task_lock(data.project_id)
 
-                # Drain stale queue items (same as SSE POST /chat handler)
-                if not task_lock.queue.empty():
-                    while not task_lock.queue.empty():
-                        try:
-                            task_lock.queue.get_nowait()
-                        except asyncio.QueueEmpty:
-                            break
+                if task_lock.status == Status.done:
+                    task_lock.status = Status.confirming
+                    if hasattr(task_lock, "background_tasks"):
+                        task_lock.background_tasks.clear()
 
-                # Load conversation history
+                # Load conversation history safely, clearing if user overrides history completely
                 if data.history and len(data.history) > 0:
+                    task_lock.conversation_history.clear()
                     for hist_msg in data.history:
                         task_lock.add_conversation(hist_msg.role, hist_msg.content)
 
@@ -182,6 +171,11 @@ async def websocket_chat(ws: WebSocket):
                 os.environ["CAMEL_LOG_DIR"] = str(camel_log)
 
                 set_current_task_id(data.project_id, data.task_id)
+                
+                # Process attachments for follow-up turns
+                if data.attaches:
+                    working_directory = get_working_directory(options, task_lock)
+                    data.attaches = process_attaches(data.attaches, working_directory)
 
                 # Enqueue the initial improve action
                 await task_lock.put_queue(
@@ -202,26 +196,16 @@ async def websocket_chat(ws: WebSocket):
                     },
                 )
 
-                # Launch the SSE consumer in the background
-                sse_consumer_task = asyncio.create_task(
-                    _consume_sse_and_forward()
-                )
+                # Launch the SSE consumer in the background if it's not currently running
+                if sse_consumer_task is None or sse_consumer_task.done():
+                    sse_consumer_task = asyncio.create_task(
+                        _consume_sse_and_forward()
+                    )
 
             # ----------------------------------------------------------
             # improve — equivalent to POST /chat/{project_id}
             # ----------------------------------------------------------
             elif msg_type == "improve":
-                if task_lock is None:
-                    await ws.send_text(
-                        json.dumps(
-                            {
-                                "step": "error",
-                                "data": {"message": "No active session"},
-                            }
-                        )
-                    )
-                    continue
-
                 try:
                     sup = SupplementChat(**payload)
                 except (ValidationError, Exception) as exc:
@@ -235,11 +219,36 @@ async def websocket_chat(ws: WebSocket):
                     )
                     continue
 
+                if task_lock is None:
+                    if sup.project_id:
+                        task_lock = get_or_create_task_lock(sup.project_id)
+                        options = Chat(task_id=sup.task_id or "", project_id=sup.project_id, question=sup.question)
+                        
+                        if sse_consumer_task is None or sse_consumer_task.done():
+                            sse_consumer_task = asyncio.create_task(
+                                _consume_sse_and_forward()
+                            )
+                    else:
+                        await ws.send_text(
+                            json.dumps(
+                                {
+                                    "step": "error",
+                                    "data": {"message": "No active session"},
+                                }
+                            )
+                        )
+                        continue
+
                 # Allow continuing after task is done
                 if task_lock.status == Status.done:
                     task_lock.status = Status.confirming
                     if hasattr(task_lock, "background_tasks"):
                         task_lock.background_tasks.clear()
+
+                # Process attachments for follow-up turns
+                if sup.attaches:
+                    working_directory = get_working_directory(options, task_lock)
+                    sup.attaches = process_attaches(sup.attaches, working_directory)
 
                 await task_lock.put_queue(
                     ActionImproveData(

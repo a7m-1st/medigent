@@ -75,7 +75,8 @@ export type Chat = z.infer<typeof ChatSchema>;
 export const SupplementChatSchema = z.object({
   question: z.string().min(1),
   task_id: z.string().nullable().optional(),
-  attaches: z.array(z.string()).default([]),
+  project_id: z.string(),
+  attaches: z.array(z.string()).optional().default([]),
 });
 export type SupplementChat = z.infer<typeof SupplementChatSchema>;
 

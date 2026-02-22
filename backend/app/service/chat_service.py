@@ -31,6 +31,7 @@ from app.agent.tools import get_mcp_tools, get_toolkits
 from app.model.chat import Chat, NewAgent, Status, sse_json
 from app.service.task import (
     Action,
+    ActionCreateAgentData,
     ActionDecomposeProgressData,
     ActionDecomposeTextData,
     ActionEndData,
@@ -55,6 +56,88 @@ MAX_CONVERSATION_CONTEXT_LENGTH = 100000
 
 # Feature flag: Enable dynamic task routing based on complexity
 ENABLE_DYNAMIC_ROUTING = True
+
+
+def _extract_agent_tool_names(agent: Any) -> list[str]:
+    """Extract registered tool names from a ListenChatAgent-like object."""
+    internal_tools = getattr(agent, "_internal_tools", None)
+    if isinstance(internal_tools, dict):
+        return [str(name) for name in internal_tools.keys()]
+    return []
+
+
+MAIN_WORKFORCE_AGENT_NAMES = {
+    Agents.chief_of_medicine.value,
+    Agents.clinical_researcher.value,
+    Agents.medical_scribe.value,
+    Agents.radiologist.value,
+    Agents.attending_physician.value,
+    Agents.clinical_pharmacologist.value,
+}
+
+
+def _normalize_agent_name(raw_name: Any) -> str:
+    if isinstance(raw_name, Agents):
+        return raw_name.value
+
+    normalized = str(raw_name or "").strip()
+    if normalized.startswith("Agents."):
+        return normalized.split(".", 1)[1]
+    return normalized
+
+
+async def _replay_cached_agent_create_events(
+    task_lock: TaskLock,
+    workforce: Workforce,
+) -> None:
+    """Replay create_agent SSE actions for agents in a cached workforce.
+
+    When a workforce is reused from cache, agent_model() is not called again,
+    so no new Action.create_agent events are enqueued. Frontend sessions that
+    reconnect need these events to rebuild their local agent map.
+    """
+    seen_agent_ids: set[str] = set()
+    replay_candidates: list[Any] = []
+
+    for attr in ("coordinator_agent", "task_agent", "new_worker_agent"):
+        agent = getattr(workforce, attr, None)
+        if agent is not None:
+            replay_candidates.append(agent)
+
+    for child in getattr(workforce, "_children", []):
+        worker = getattr(child, "worker", None)
+        if worker is not None:
+            replay_candidates.append(worker)
+
+    replay_count = 0
+    for agent in replay_candidates:
+        agent_id = getattr(agent, "agent_id", None)
+        if not agent_id or agent_id in seen_agent_ids:
+            continue
+
+        normalized_name = _normalize_agent_name(
+            getattr(agent, "agent_name", None)
+        )
+        if normalized_name not in MAIN_WORKFORCE_AGENT_NAMES:
+            continue
+
+        seen_agent_ids.add(agent_id)
+
+        await task_lock.put_queue(
+            ActionCreateAgentData(
+                data={
+                    "agent_name": normalized_name,
+                    "agent_id": str(agent_id),
+                    "tools": _extract_agent_tool_names(agent),
+                }
+            )
+        )
+        replay_count += 1
+
+    logger.info(
+        f"[WORKFORCE] Replayed {replay_count} cached create_agent events",
+        extra={"project_id": task_lock.id},
+    )
 
 
 async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
@@ -91,6 +174,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
     loop_iteration = 0
     event_loop = asyncio.get_running_loop()
     sub_tasks: list[Task] = []
+    cached_agents_replayed = False
 
     # Session timeout: 1 hour (3600 seconds)
     SESSION_TIMEOUT_SECONDS = 3600
@@ -302,6 +386,20 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
 
                 yield sse_json("confirmed", {"question": question})
 
+                # If this session is reusing a cached workforce from a prior
+                # connection, replay create_agent events so the frontend can
+                # rebuild its agent registry before further lifecycle events.
+                if (
+                    not cached_agents_replayed
+                    and workforce is None
+                    and task_lock.workforce is not None
+                ):
+                    await _replay_cached_agent_create_events(
+                        task_lock,
+                        task_lock.workforce,
+                    )
+                    cached_agents_replayed = True
+
                 # ============================================================
                 # DYNAMIC ROUTING: Evaluate task complexity before processing
                 # ============================================================
@@ -512,11 +610,21 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 camel_task = Task(
                     content=clean_task_content, id=options.task_id
                 )
+                camel_task.failure_count = 0
+                # To support follow-up tasks referencing previously uploaded files,
+                # populate additional_info with all files in the working directory
+                task_files = {}
+                if Path(working_directory).exists():
+                    for f in Path(working_directory).iterdir():
+                        if f.is_file():
+                            task_files[f.name] = str(f.absolute()).replace("\\", "/")
+                
                 if len(attaches_to_use) > 0:
-                    camel_task.additional_info = {
-                        Path(file_path).name: file_path
-                        for file_path in attaches_to_use
-                    }
+                    for file_path in attaches_to_use:
+                        task_files[Path(file_path).name] = file_path.replace("\\", "/")
+                
+                if task_files:
+                    camel_task.additional_info = task_files
 
                 # Stream decomposition in background
                 stream_state = {
@@ -775,7 +883,8 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     },
                 )
             elif item.action == Action.decompose_text:
-                yield sse_json("decompose_text", item.data)
+                # yield sse_json("decompose_text", item.data)
+                pass
             elif item.action == Action.decompose_progress:
                 yield sse_json("to_sub_tasks", item.data)
             elif item.action == Action.error:

@@ -202,8 +202,21 @@ class SingleAgentWorker(BaseSingleAgentWorker):
         final_response = None
         try:
             dependency_tasks_info = self._get_dep_tasks_info(dependencies)
+            task_content = task.content
+            # The coordinator often writes relative filenames (e.g. "file_1.jpg" in the CWD)
+            # but the actual toolkits need the absolute path. If we have absolute paths mapped
+            # in additional_info, substitute them directly into the task content so the worker
+            # agent receives the absolute path.
+            if isinstance(task.additional_info, dict):
+                for k, v in task.additional_info.items():
+                    if isinstance(k, str) and isinstance(v, str) and k in task_content:
+                        # Use forward slashes to prevent JSON escaping issues when the LLM generates the tool call
+                        safe_v = v.replace("\\", "/")
+                        # Replace the filename with the absolute path
+                        task_content = task_content.replace(k, safe_v)
+            
             prompt = PROCESS_TASK_PROMPT.format(
-                content=task.content,
+                content=task_content,
                 parent_task_content=task.parent.content if task.parent else "",
                 dependency_tasks_info=dependency_tasks_info,
                 additional_info=task.additional_info,

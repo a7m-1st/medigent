@@ -1,39 +1,58 @@
-import { useCallback } from 'react';
-import { 
-  SSEEventSchema, 
-  type SSEEvent,
+import {
+  useAgentStatusStore,
+  useChatStore,
+  useResourceStore,
+  useTaskDecompStore,
+} from '@/stores';
+import { AGENT_DISPLAY_NAMES, MAIN_AGENT_NAMES } from '@/stores/agentStatusStore';
+import { useProjectStore } from '@/stores/projectStore';
+import type { ChatMessage } from '@/types';
+import {
+  SSEEventSchema,
+  type SSEActivateAgentEvent,
+  type SSEActivateToolkitEvent,
+  type SSEAskEvent,
+  type SSEAssignTaskEvent,
   type SSEConfirmedEvent,
   type SSECreateAgentEvent,
-  type SSEActivateAgentEvent,
   type SSEDeactivateAgentEvent,
-  type SSEActivateToolkitEvent,
   type SSEDeactivateToolkitEvent,
   type SSEDecomposeTextEvent,
-  type SSEToSubTasksEvent,
-  type SSEAssignTaskEvent,
-  type SSETaskStateEvent,
-  type SSTerminalEvent,
-  type SSEWriteFileEvent,
-  type SSENoticeEvent,
-  type SSEAskEvent,
   type SSEEndEvent,
   type SSEErrorEvent,
+  type SSEEvent,
+  type SSENoticeEvent,
+  type SSETaskStateEvent,
+  type SSEToSubTasksEvent,
+  type SSEWriteFileEvent,
+  type SSTerminalEvent,
 } from '@/types';
-import { 
-  useAgentStatusStore, 
-  useTaskDecompStore, 
-  useResourceStore,
-  useChatStore,
-} from '@/stores';
-import { useProjectStore } from '@/stores/projectStore';
-import { MAIN_AGENT_NAMES, AGENT_DISPLAY_NAMES } from '@/stores/agentStatusStore';
-import type { ChatMessage } from '@/types';
+import { useCallback } from 'react';
 
 // ============================================
 // Main Agent Names check helper
 // ============================================
 function isMainAgent(name: string): boolean {
   return MAIN_AGENT_NAMES.includes(name as any);
+}
+
+function ensureMainAgentExists(
+  agentName: string,
+  agentId: string,
+  tools: string[] = []
+): void {
+  if (!isMainAgent(agentName)) {
+    return;
+  }
+
+  const store = useAgentStatusStore.getState();
+  const existing = store.agents[agentName];
+  if (!existing) {
+    store.createAgent(agentId, agentName, tools);
+    return;
+  }
+
+  store.registerAgentId(agentName, agentId);
 }
 
 /**
@@ -176,15 +195,16 @@ export function useSSEHandler(options: SSEHandlerOptions = {}) {
 
   function handleActivateAgent(data: SSEActivateAgentEvent['data']) {
     if (isMainAgent(data.agent_name)) {
-      // Register the new agent_id (may differ from create_agent's ID)
-      agentStore.registerAgentId(data.agent_name, data.agent_id);
+      // Ensure the agent entry exists even if create_agent was missed/delayed
+      ensureMainAgentExists(data.agent_name, data.agent_id);
       agentStore.setAgentWorking(data.agent_name, data.agent_id, data.process_task_id, data.message);
     }
   }
 
   function handleDeactivateAgent(data: SSEDeactivateAgentEvent['data']) {
     if (isMainAgent(data.agent_name)) {
-      agentStore.registerAgentId(data.agent_name, data.agent_id);
+      // Ensure the agent entry exists even if create_agent was missed/delayed
+      ensureMainAgentExists(data.agent_name, data.agent_id);
       agentStore.setAgentCompleted(data.agent_name, data.agent_id, data.message, data.tokens);
     } else if (data.agent_name === 'task_summary_agent') {
       taskStore.setSummaryTask(data.message);
