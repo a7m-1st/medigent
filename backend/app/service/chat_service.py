@@ -362,19 +362,54 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         "existing workforce "
                         f"(id={id(workforce)})"
                     )
-                    # Prepare workforce for the new task (reset memory,
-                    # clear bookkeeping, keep workers alive)
-                    workforce.prepare_for_new_task()
-                    logger.info(
-                        "[NEW-QUESTION] Workforce reset "
-                        "for reuse via prepare_for_new_task()"
-                    )
+                    # Feature 5: If workforce is still running (user sent
+                    # a follow-up before the previous task finished),
+                    # preempt the in-flight work first.
+                    if workforce._running:
+                        logger.info(
+                            "[NEW-QUESTION] Workforce still running — "
+                            "preempting in-flight tasks"
+                        )
+                        await workforce.preempt_and_redirect()
+                        # Drain stale events (e.g. ActionEndData that might
+                        # have been queued before the preemption flag was set)
+                        while not task_lock.queue.empty():
+                            try:
+                                task_lock.queue.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
+                        logger.info(
+                            "[NEW-QUESTION] Workforce reset "
+                            "for reuse via preempt_and_redirect()"
+                        )
+                    else:
+                        # Prepare workforce for the new task (reset memory,
+                        # clear bookkeeping, keep workers alive)
+                        workforce.prepare_for_new_task()
+                        logger.info(
+                            "[NEW-QUESTION] Workforce reset "
+                            "for reuse via prepare_for_new_task()"
+                        )
                 elif task_lock.workforce is not None:
                     # Recover workforce cached in task_lock from
                     # a prior Action.end (Feature 3: workforce reuse)
                     workforce = task_lock.workforce
                     task_lock.workforce = None
-                    workforce.prepare_for_new_task()
+                    # Feature 5: Preempt if still running
+                    if workforce._running:
+                        logger.info(
+                            "[NEW-QUESTION] CACHED workforce still running — "
+                            "preempting in-flight tasks"
+                        )
+                        await workforce.preempt_and_redirect()
+                        # Drain stale events
+                        while not task_lock.queue.empty():
+                            try:
+                                task_lock.queue.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
+                    else:
+                        workforce.prepare_for_new_task()
                     logger.info(
                         "[NEW-QUESTION] Reusing CACHED "
                         "workforce from task_lock "

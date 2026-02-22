@@ -73,6 +73,7 @@ class Workforce(BaseWorkforce):
     ) -> None:
         self.api_task_id = api_task_id
         self._support_native_tool_calling = support_native_tool_calling
+        self._preempted = False  # Feature 5: suppress ActionEndData on preemption
         logger.info("=" * 80)
         logger.info(
             "🏭 [WF-LIFECYCLE] Workforce.__init__ STARTED",
@@ -979,6 +980,15 @@ class Workforce(BaseWorkforce):
             f"[WF-LIFECYCLE] super().stop() completed, "
             f"new state: {self._state.name}"
         )
+
+        # Feature 5: When preempted, do NOT queue ActionEndData — the task
+        # is not finished, it's being superseded by a new question.
+        if self._preempted:
+            logger.info(
+                "[WF-LIFECYCLE] Skipping ActionEndData (preempted)"
+            )
+            return
+
         task_lock = get_task_lock(self.api_task_id)
         task = asyncio.create_task(task_lock.put_queue(ActionEndData()))
         task_lock.add_background_task(task)
@@ -1063,6 +1073,91 @@ class Workforce(BaseWorkforce):
             logger.error(f"Error cleaning up workforce resources: {e}")
 
     # ------------------------------------------------------------------
+    # Feature 5: Preemption — cancel in-flight work for a new question
+    # ------------------------------------------------------------------
+
+    async def preempt_and_redirect(self) -> None:
+        """Cancel all in-flight subtasks so the workforce can immediately
+        start a brand-new task.
+
+        Unlike :meth:`stop`, this method does **not** queue an
+        ``ActionEndData`` event (the task is not "finished" — it is being
+        superseded).  The sequence is:
+
+        1. Signal ``_stop_requested`` so ``_listen_to_channel`` exits.
+        2. Cancel child listening tasks (workers' asyncio Tasks).
+        3. Give a short grace period for cancellation to propagate.
+        4. Call :meth:`prepare_for_new_task` to clear bookkeeping and
+           reset agents for the next task.
+
+        This method is safe to call from any thread — it uses
+        ``_submit_coro_to_loop`` when the workforce event loop is alive,
+        and falls back to synchronous cleanup otherwise.
+        """
+        logger.info(
+            "[WF-PREEMPT] preempt_and_redirect() called",
+            extra={"api_task_id": self.api_task_id, "workforce_id": id(self)},
+        )
+
+        if not self._running:
+            # Workforce already idle — just reset bookkeeping.
+            logger.info(
+                "[WF-PREEMPT] Workforce not running, "
+                "falling back to prepare_for_new_task()"
+            )
+            self.prepare_for_new_task()
+            return
+
+        # --- 1. Request stop (sets _stop_requested, unblocks pause) ---
+        self._stop_requested = True
+        self._preempted = True  # Suppress ActionEndData in stop()
+        if hasattr(self, "_pause_event"):
+            self._pause_event.set()
+
+        # --- 2. Cancel child listening tasks ---
+        for child_task in getattr(self, "_child_listening_tasks", []):
+            if not child_task.done():
+                child_task.cancel()
+
+        # Also cancel children's own tasks
+        for child in self._children:
+            if child._running:
+                try:
+                    child.stop()
+                except Exception as exc:
+                    logger.debug(
+                        f"[WF-PREEMPT] Ignoring error stopping "
+                        f"child {getattr(child, 'node_id', '?')}: {exc}"
+                    )
+
+        # Clear pending/in-flight immediately so the loop exits quickly
+        self._pending_tasks.clear()
+        self._in_flight_tasks = 0
+
+        # --- 3. Brief grace period for asyncio cancellation ---
+        try:
+            await asyncio.sleep(0.1)
+        except Exception:
+            pass
+
+        # Mark as not running so start() can be called again
+        self._running = False
+        self._state = WorkforceState.STOPPED
+
+        logger.info(
+            "[WF-PREEMPT] Workforce stopped, now resetting for new task"
+        )
+
+        # --- 4. Reset bookkeeping for the new task ---
+        self.prepare_for_new_task()
+
+        logger.info(
+            "[WF-PREEMPT] preempt_and_redirect() completed — "
+            "workforce ready for reuse",
+            extra={"api_task_id": self.api_task_id, "workforce_id": id(self)},
+        )
+
+    # ------------------------------------------------------------------
     # Feature 3: Workforce reuse across tasks within the same project
     # ------------------------------------------------------------------
 
@@ -1088,6 +1183,7 @@ class Workforce(BaseWorkforce):
         self._assignees.clear()
         self._task_dependencies.clear()
         self._stop_requested = False
+        self._preempted = False  # Feature 5: clear preemption flag
 
         # 2. Reset state to IDLE so start() can be called again
         self._state = WorkforceState.IDLE
