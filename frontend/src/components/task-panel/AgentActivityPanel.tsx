@@ -252,7 +252,11 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent }) => {
               {outputContent && agent.state !== 'working' && (
                 <div>
                   <div className="flex items-center gap-1.5 mb-1.5">
-                    <CheckCircle2 className="w-3 h-3 text-success" />
+                    {agent.state === 'error' ? (
+                      <AlertCircle className="w-3 h-3 text-error" />
+                    ) : (
+                      <CheckCircle2 className="w-3 h-3 text-success" />
+                    )}
                     <span className="text-[10px] font-semibold text-foreground-muted uppercase tracking-wide">
                       Output
                     </span>
