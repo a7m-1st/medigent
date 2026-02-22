@@ -1416,9 +1416,10 @@ You are a helpful coordinator.
 {platform.machine()} at working directory \
 `{working_directory}`. All local file operations \
 must occur here, but you can access files from any \
-place in the file system. For all file system \
-operations, you MUST use absolute paths to ensure \
-precision and avoid ambiguity.
+place in the file system. When referring to files, \
+you MUST use ONLY the exact filename (e.g., 'image.png' \
+instead of '/full/path/image.png'). The system will \
+automatically resolve the correct absolute path for the tools.
 The current date is {datetime.date.today()}. \
 For any date-related tasks, you MUST use this as \
 the current date.
@@ -1438,9 +1439,10 @@ You are a helpful task planner.
 {platform.machine()} at working directory \
 `{working_directory}`. All local file operations \
 must occur here, but you can access files from any \
-place in the file system. For all file system \
-operations, you MUST use absolute paths to ensure \
-precision and avoid ambiguity.
+place in the file system. When referring to files, \
+you MUST use ONLY the exact filename (e.g., 'image.png' \
+instead of '/full/path/image.png'). The system will \
+automatically resolve the correct absolute path for the tools.
 The current date is {datetime.date.today()}. \
 For any date-related tasks, you MUST use this as \
 the current date.
@@ -1458,9 +1460,10 @@ the current date.
 {platform.machine()} at working directory \
 `{working_directory}`. All local file operations \
 must occur here, but you can access files from any \
-place in the file system. For all file system \
-operations, you MUST use absolute paths to ensure \
-precision and avoid ambiguity.
+place in the file system. When referring to files, \
+you MUST use ONLY the exact filename (e.g., 'image.png' \
+instead of '/full/path/image.png'). The system will \
+automatically resolve the correct absolute path for the tools.
 The current date is {datetime.date.today()}. \
 For any date-related tasks, you MUST use this as \
 the current date.
