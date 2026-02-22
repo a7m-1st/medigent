@@ -41,6 +41,73 @@ from app.utils.event_loop_utils import _schedule_async_task
 logger = logging.getLogger("agent")
 
 
+# ─── Module-level helpers for JSON repair in tool call parsing ───────────
+
+
+def _escape_json_control_chars(raw: str) -> str:
+    """Escape unescaped control characters inside JSON string values.
+
+    Small models (MedGemma) often output literal newlines, tabs,
+    etc. inside JSON strings instead of the proper ``\\n`` / ``\\t``
+    escape sequences.  ``json.loads`` rejects these.
+
+    This function walks the raw JSON text and escapes any ASCII control
+    character (0x00–0x1F) that appears inside a quoted string value and
+    is not already part of a valid JSON escape (``\\n``, ``\\t``, etc.).
+    """
+    result = []
+    in_string = False
+    i = 0
+    length = len(raw)
+    while i < length:
+        ch = raw[i]
+        if ch == '"' and (i == 0 or raw[i - 1] != '\\'):
+            in_string = not in_string
+            result.append(ch)
+        elif in_string and ord(ch) < 0x20:
+            # Replace literal control char with its JSON escape
+            escape_map = {
+                '\n': '\\n',
+                '\r': '\\r',
+                '\t': '\\t',
+                '\b': '\\b',
+                '\f': '\\f',
+            }
+            result.append(escape_map.get(ch, f'\\u{ord(ch):04x}'))
+        else:
+            result.append(ch)
+        i += 1
+    return ''.join(result)
+
+
+def _extract_json_object(text: str) -> str | None:
+    """Extract the outermost ``{...}`` JSON object using bracket counting.
+
+    If the model appends trailing text after the closing ``}``, this
+    function strips it so ``json.loads`` can succeed.
+
+    Returns the extracted substring or ``None`` if no balanced object
+    is found.
+    """
+    start = text.find('{')
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if ch == '"' and (i == 0 or text[i - 1] != '\\'):
+            in_str = not in_str
+        elif not in_str:
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    return text[start:i + 1]
+    return None
+
+
 class ListenChatAgent(ChatAgent):
     def __init__(
         self,
@@ -210,11 +277,30 @@ class ListenChatAgent(ChatAgent):
         <tool_call> tags.  This method converts known variants so that
         ``HermesFunctionFormatter.extract_tool_calls`` can parse them.
 
+        Additionally, repairs malformed JSON inside <tool_call> blocks
+        (unescaped control characters, trailing text, etc.) that small
+        models like MedGemma / GLM-4 tend to produce.
+
         Currently handles:
         - ```tool_call\\n{...}\\n``` → <tool_call>{...}</tool_call>
+        - ```tool_call\\n{...}\\n</tool_call>\\n``` → hybrid format
         - ```xml\\n<tool_call>...</tool_call>\\n``` → unwrapped as-is
+        - ```json\\n<tool_call>...</tool_call>\\n``` → unwrapped as-is
         - Plain <tool_call>...</tool_call> → unchanged
+        - JSON with unescaped newlines/tabs inside string values → escaped
         """
+        # Pattern: hybrid — ```tool_call\n{...}\n</tool_call>\n```
+        # The model mixes markdown fences with XML close tags.
+        # Must come BEFORE the plain fence pattern to avoid partial matches.
+        hybrid_pattern = re.compile(
+            r"```tool_call\s*\n(.*?)\n</tool_call>\s*\n?```", re.DOTALL
+        )
+        def replace_hybrid(m: re.Match) -> str:
+            inner = m.group(1).strip()
+            return f"<tool_call>\n{inner}\n</tool_call>"
+
+        content = hybrid_pattern.sub(replace_hybrid, content)
+
         # Pattern: ```tool_call\n{...}\n``` (code fence with 'tool_call' lang)
         fence_pattern = re.compile(
             r"```tool_call\s*\n(.*?)\n```", re.DOTALL
@@ -225,9 +311,59 @@ class ListenChatAgent(ChatAgent):
 
         content = fence_pattern.sub(replace_fence, content)
 
-        # Pattern: ```xml\n...\n``` — just strip the fences, keep inner XML
-        xml_fence_pattern = re.compile(r"```xml\s*\n(.*?)\n```", re.DOTALL)
+        # Pattern: ```xml\n...\n``` or ```json\n...\n``` — strip fences
+        xml_fence_pattern = re.compile(r"```(?:xml|json)\s*\n(.*?)\n```", re.DOTALL)
         content = xml_fence_pattern.sub(lambda m: m.group(1).strip(), content)
+
+        # --- JSON repair inside <tool_call> blocks ---
+        # Small models often emit literal newlines, tabs, or other control
+        # characters inside JSON string values (e.g. the "content" field of
+        # create_note).  json.loads() rejects these.  We fix them by escaping
+        # control characters inside the JSON blob.
+        def _repair_tool_call_json(m: re.Match) -> str:
+            raw_json = m.group(1).strip()
+            # First, try parsing as-is (fast path)
+            try:
+                json.loads(raw_json)
+                return f"<tool_call>\n{raw_json}\n</tool_call>"
+            except json.JSONDecodeError:
+                pass
+
+            # Repair: escape literal control characters (0x00-0x1F) that are
+            # not already part of a valid JSON escape sequence.
+            # We walk through the string and only escape control chars that
+            # appear inside JSON string values (between unescaped quotes).
+            repaired = _escape_json_control_chars(raw_json)
+
+            try:
+                json.loads(repaired)
+                logger.debug("Repaired JSON in <tool_call> block")
+                return f"<tool_call>\n{repaired}\n</tool_call>"
+            except json.JSONDecodeError:
+                pass
+
+            # Last resort: try to extract just the outer JSON object using
+            # a bracket-counting approach, in case there's trailing garbage.
+            extracted = _extract_json_object(raw_json)
+            if extracted:
+                repaired2 = _escape_json_control_chars(extracted)
+                try:
+                    json.loads(repaired2)
+                    logger.debug("Extracted & repaired JSON from <tool_call>")
+                    return f"<tool_call>\n{repaired2}\n</tool_call>"
+                except json.JSONDecodeError:
+                    pass
+
+            # Give up — return as-is so the caller's fallback logic handles it
+            logger.warning("Could not repair JSON in <tool_call> block")
+            return m.group(0)
+
+        content = re.sub(
+            r"<tool_call>\s*(.*?)\s*</tool_call>",
+            _repair_tool_call_json,
+            content,
+            flags=re.DOTALL,
+        )
 
         return content
 
@@ -563,10 +699,13 @@ class ListenChatAgent(ChatAgent):
             follow_up_message = (
                 f"Tool results:\n"
                 f"{tool_results_text}\n\n"
-                f"You may call another tool if needed, or return your FINAL answer.\n"
-                f"To call another tool, respond with ONLY a <tool_call> block.\n"
-                f"To finish, respond with ONLY a JSON object:\n"
-                f'{{"content": "your complete result", "failed": false}}'
+                f"Continue with your next step. You have TWO options:\n\n"
+                f"OPTION A - Call another tool (if you still have steps remaining):\n"
+                f"Respond with ONLY a <tool_call> block, nothing else.\n\n"
+                f"OPTION B - You are DONE with all tool calls:\n"
+                f"Respond with ONLY this JSON (no markdown, no extra text):\n"
+                f'{{"content": "brief 2-3 sentence summary of what you did and found", "failed": false}}\n\n'
+                f"CRITICAL: Pick exactly ONE option. Do NOT mix them."
             )
 
             # Get the next response from the model
@@ -802,10 +941,13 @@ class ListenChatAgent(ChatAgent):
             follow_up_message = (
                 f"Tool results:\n"
                 f"{tool_results_text}\n\n"
-                f"You may call another tool if needed, or return your FINAL answer.\n"
-                f"To call another tool, respond with ONLY a <tool_call> block.\n"
-                f"To finish, respond with ONLY a JSON object:\n"
-                f'{{"content": "your complete result", "failed": false}}'
+                f"Continue with your next step. You have TWO options:\n\n"
+                f"OPTION A - Call another tool (if you still have steps remaining):\n"
+                f"Respond with ONLY a <tool_call> block, nothing else.\n\n"
+                f"OPTION B - You are DONE with all tool calls:\n"
+                f"Respond with ONLY this JSON (no markdown, no extra text):\n"
+                f'{{"content": "brief 2-3 sentence summary of what you did and found", "failed": false}}\n\n'
+                f"CRITICAL: Pick exactly ONE option. Do NOT mix them."
             )
 
             # Get the next response from the model
