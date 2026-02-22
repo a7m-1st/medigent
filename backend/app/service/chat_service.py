@@ -1032,9 +1032,13 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
 
                 if not str(final_result or "").strip():
                     if latest_task_result.strip():
-                        final_result = latest_task_result
+                        final_result = _strip_subtask_prefix(
+                            latest_task_result
+                        )
                     elif task_lock.last_task_result.strip():
-                        final_result = task_lock.last_task_result
+                        final_result = _strip_subtask_prefix(
+                            task_lock.last_task_result
+                        )
                     elif latest_task_state.lower() == "failed":
                         final_result = (
                             "Task execution failed after maximum retries. "
@@ -1314,6 +1318,19 @@ Summary:
     return summary
 
 
+def _strip_subtask_prefix(text: str) -> str:
+    """Strip the ``--- Subtask <id> Result ---`` header that the CAMEL
+    workforce prepends when assembling a parent task result from a single
+    subtask.  Returns the text unchanged when no such header is found."""
+    if text and "--- Subtask" in text and "Result ---" in text:
+        parts = text.split("Result ---", 1)
+        if len(parts) > 1:
+            stripped = parts[1].strip()
+            if stripped:
+                return stripped
+    return text
+
+
 async def get_task_result_with_optional_summary(
         task: Task, options: Chat
 ) -> str:
@@ -1329,10 +1346,16 @@ async def get_task_result_with_optional_summary(
     """
     result = str(task.result or "")
 
-    if task.subtasks and len(task.subtasks) > 1:
+    subtask_count = len(task.subtasks) if task.subtasks else 0
+    logger.debug(
+        f"[RESULT] task {task.id}: subtask_count={subtask_count}, "
+        f"result_len={len(result)}, has_prefix={'--- Subtask' in result}"
+    )
+
+    if subtask_count > 1:
         logger.info(
             f"Task {task.id} has "
-            f"{len(task.subtasks)} subtasks, "
+            f"{subtask_count} subtasks, "
             "generating summary"
         )
         try:
@@ -1344,12 +1367,17 @@ async def get_task_result_with_optional_summary(
             logger.info(f"Successfully generated summary for task {task.id}")
         except Exception as e:
             logger.error(f"Failed to generate summary for task {task.id}: {e}")
-    elif task.subtasks and len(task.subtasks) == 1:
-        logger.info(f"Task {task.id} has only 1 subtask, skipping LLM summary")
-        if result and "--- Subtask" in result and "Result ---" in result:
-            parts = result.split("Result ---", 1)
-            if len(parts) > 1:
-                result = parts[1].strip()
+    else:
+        # Single subtask (or subtask list not populated on cached-workforce
+        # follow-up turns) — strip the "--- Subtask ... Result ---" header
+        # that the CAMEL base class prepends.
+        if subtask_count == 0 and "--- Subtask" in result:
+            logger.warning(
+                f"[RESULT] task {task.id}: subtasks list is empty but "
+                f"result contains subtask prefix — this indicates a "
+                f"workforce-reuse bookkeeping gap"
+            )
+        result = _strip_subtask_prefix(result)
 
     return result
 
