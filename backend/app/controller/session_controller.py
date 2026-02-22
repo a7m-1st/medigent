@@ -245,6 +245,20 @@ async def websocket_chat(ws: WebSocket):
                     if hasattr(task_lock, "background_tasks"):
                         task_lock.background_tasks.clear()
 
+                if sup.task_id and options is not None:
+                    set_current_task_id(task_lock.id, sup.task_id)
+                    options.task_id = sup.task_id
+                    os.environ["file_save_path"] = options.file_save_path()
+                    camel_log = (
+                        Path.home()
+                        / ".medgemma"
+                        / ("project_" + options.project_id)
+                        / ("task_" + options.task_id)
+                        / "camel_logs"
+                    )
+                    camel_log.mkdir(parents=True, exist_ok=True)
+                    os.environ["CAMEL_LOG_DIR"] = str(camel_log)
+
                 # Process attachments for follow-up turns
                 if sup.attaches:
                     working_directory = get_working_directory(options, task_lock)

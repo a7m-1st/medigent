@@ -303,6 +303,24 @@ def improve(id: str, data: SupplementChat):
     )
     task_lock = get_task_lock(id)
 
+    if data.task_id:
+        set_current_task_id(id, data.task_id)
+        os.environ["file_save_path"] = (
+            Path.home()
+            / "medgemma"
+            / f"project_{id}"
+            / f"task_{data.task_id}"
+        ).as_posix()
+        camel_log = (
+            Path.home()
+            / "medgemma"
+            / f"project_{id}"
+            / f"task_{data.task_id}"
+            / "camel_logs"
+        )
+        camel_log.mkdir(parents=True, exist_ok=True)
+        os.environ["CAMEL_LOG_DIR"] = str(camel_log)
+
     # Allow continuing conversation even after task is done
     # This supports multi-turn conversation after complex task completion
     if task_lock.status == Status.done:

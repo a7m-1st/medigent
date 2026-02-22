@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import logging
+import os
 import platform
 from pathlib import Path
 from typing import Any
@@ -342,8 +343,39 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         f"'{question[:100]}...'"
                     )
 
+                incoming_task_id = getattr(item, "new_task_id", None)
+                active_task_id = (
+                    incoming_task_id
+                    or getattr(task_lock, "current_task_id", None)
+                    or options.task_id
+                )
+
+                if incoming_task_id:
+                    set_current_task_id(options.project_id, incoming_task_id)
+                    task_lock.summary_generated = False
+
+                if active_task_id and options.task_id != active_task_id:
+                    options.task_id = active_task_id
+                    os.environ["file_save_path"] = options.file_save_path()
+                    camel_log = (
+                        Path.home()
+                        / ".medgemma"
+                        / ("project_" + options.project_id)
+                        / ("task_" + options.task_id)
+                        / "camel_logs"
+                    )
+                    camel_log.mkdir(parents=True, exist_ok=True)
+                    os.environ["CAMEL_LOG_DIR"] = str(camel_log)
+                    logger.info(
+                        "[NEW-QUESTION] Updated runtime task context",
+                        extra={
+                            "project_id": options.project_id,
+                            "task_id": options.task_id,
+                        },
+                    )
+
                 # Process attachments: convert base64 images to file paths
-                working_directory = get_working_directory(options)
+                working_directory = get_working_directory(options, task_lock)
                 attaches_to_use = process_attaches(
                     attaches_raw, working_directory
                 ) if attaches_raw else []
@@ -381,11 +413,6 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     "[NEW-QUESTION] Processing task "
                     "via workforce flow"
                 )
-                # Update the sync_step with new task_id
-                if hasattr(item, "new_task_id") and item.new_task_id:
-                    set_current_task_id(options.project_id, item.new_task_id)
-                    task_lock.summary_generated = False
-
                 yield sse_json("confirmed", {"question": question})
 
                 # If this session is reusing a cached workforce from a prior
@@ -573,6 +600,8 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                             "[NEW-QUESTION] Workforce reset "
                             "for reuse via prepare_for_new_task()"
                         )
+                    # Update toolkit working directories to current task folder
+                    workforce.update_working_directory(working_directory)
                 elif task_lock.workforce is not None:
                     # Recover workforce cached in task_lock from
                     # a prior Action.end (Feature 3: workforce reuse)
@@ -593,6 +622,8 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                                 break
                     else:
                         workforce.prepare_for_new_task()
+                    # Update toolkit working directories to current task folder
+                    workforce.update_working_directory(working_directory)
                     logger.info(
                         "[NEW-QUESTION] Reusing CACHED "
                         "workforce from task_lock "

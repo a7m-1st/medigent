@@ -19,6 +19,21 @@ def get_working_directory(options: Chat, task_lock=None) -> str:
     Environment variable or default path.
     """
 
+    if (
+        task_lock is not None
+        and options is not None
+        and getattr(task_lock, "current_task_id", None)
+        and task_lock.current_task_id != options.task_id
+    ):
+        save_path = (
+            Path.home()
+            / "medgemma"
+            / f"project_{options.project_id}"
+            / f"task_{task_lock.current_task_id}"
+        )
+        save_path.mkdir(parents=True, exist_ok=True)
+        return str(save_path)
+
     default_path = options.file_save_path() if options else "uploads"
     return env("file_save_path", default_path)
 

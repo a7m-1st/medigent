@@ -1238,6 +1238,103 @@ class Workforce(BaseWorkforce):
         )
 
     # ------------------------------------------------------------------
+    # Working-directory hot-swap for cached workforce reuse
+    # ------------------------------------------------------------------
+
+    def update_working_directory(self, new_directory: str) -> None:
+        """Update the working directory on all toolkit instances inside this
+        workforce **in-place**, without destroying and recreating agents.
+
+        This is called when a follow-up message references a new task_id
+        (and therefore a new on-disk folder) while the workforce is
+        being reused from cache.  It walks:
+
+        1. coordinator_agent, task_agent  (their tools may include NoteTakingToolkit)
+        2. Every child worker's primary agent (and pooled clones)
+
+        For each agent, it introspects ``FunctionTool.func`` to locate the
+        bound toolkit instance and patches its path attributes.
+        """
+        from pathlib import Path as _Path
+
+        updated_count = 0
+
+        def _patch_toolkits_on_agent(agent):
+            """Patch toolkit working dirs reachable from *agent*."""
+            nonlocal updated_count
+            internal_tools = getattr(agent, "_internal_tools", None)
+            if not isinstance(internal_tools, dict):
+                return
+            seen_toolkit_ids: set[int] = set()
+            for tool in internal_tools.values():
+                func = getattr(tool, "func", None)
+                if func is None:
+                    continue
+                toolkit = getattr(func, "__self__", None)
+                if toolkit is None:
+                    continue
+                tk_id = id(toolkit)
+                if tk_id in seen_toolkit_ids:
+                    continue
+                seen_toolkit_ids.add(tk_id)
+
+                # NoteTakingToolkit (CAMEL base) — Path attribute
+                if hasattr(toolkit, "working_directory") and isinstance(
+                    toolkit.working_directory, _Path
+                ):
+                    new_path = _Path(new_directory)
+                    if toolkit.working_directory != new_path:
+                        new_path.mkdir(parents=True, exist_ok=True)
+                        toolkit.working_directory = new_path
+                        toolkit.registry_file = new_path / ".note_register"
+                        updated_count += 1
+
+                # TerminalToolkit (CAMEL base) — str attribute
+                if hasattr(toolkit, "working_dir") and isinstance(
+                    toolkit.working_dir, str
+                ):
+                    import os as _os
+
+                    abs_new = _os.path.abspath(new_directory)
+                    if toolkit.working_dir != abs_new:
+                        toolkit.working_dir = abs_new
+                        updated_count += 1
+
+        # 1. Coordinator + task agents
+        for attr in ("coordinator_agent", "task_agent", "new_worker_agent"):
+            agent = getattr(self, attr, None)
+            if agent is not None:
+                _patch_toolkits_on_agent(agent)
+
+        # 2. Child workers (SingleAgentWorker instances)
+        for child in self._children:
+            worker = getattr(child, "worker", None)
+            if worker is not None:
+                _patch_toolkits_on_agent(worker)
+            # Pooled clones
+            for pooled in getattr(child, "_agent_pool", []):
+                _patch_toolkits_on_agent(pooled)
+
+        if updated_count:
+            logger.info(
+                f"[WF-REUSE] update_working_directory() patched "
+                f"{updated_count} toolkit paths → {new_directory}",
+                extra={
+                    "api_task_id": self.api_task_id,
+                    "workforce_id": id(self),
+                },
+            )
+        else:
+            logger.debug(
+                "[WF-REUSE] update_working_directory() — "
+                "no toolkit paths needed updating",
+                extra={
+                    "api_task_id": self.api_task_id,
+                    "workforce_id": id(self),
+                },
+            )
+
+    # ------------------------------------------------------------------
     # Feature 4: Concurrent subtask execution — batch-drain returned tasks
     # ------------------------------------------------------------------
 
