@@ -52,7 +52,9 @@ export const DashboardPage: React.FC = () => {
     }
   }, []);
 
-  // Handle responsive layout
+  // Handle responsive layout and viewport changes (mobile keyboard, address bar hiding)
+  const [, forceUpdate] = React.useReducer((x: number) => x + 1, 0);
+  
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < MOBILE_BREAKPOINT;
@@ -65,8 +67,29 @@ export const DashboardPage: React.FC = () => {
 
     handleResize();
     window.addEventListener('resize', handleResize);
-    
-    return () => window.removeEventListener('resize', handleResize);
+
+    // Handle viewport changes on mobile (keyboard appearance, address bar hiding)
+    const handleVisualViewportResize = () => {
+      if (window.visualViewport) {
+        // Update CSS variable with actual visual viewport height
+        const vh = window.visualViewport.height * 0.01;
+        document.documentElement.style.setProperty('--vh', `${vh}px`);
+        // Force re-render to ensure layout updates
+        forceUpdate();
+      }
+    };
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleVisualViewportResize);
+      handleVisualViewportResize();
+    }
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleVisualViewportResize);
+      }
+    };
   }, [rightSidebarOpen]);
 
   // Cycle through themes: light -> dark -> system
@@ -81,9 +104,10 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className={cn(
-      "bg-background text-foreground w-screen flex",
+      "fixed inset-0 bg-background text-foreground flex",
       isMobile ? "overflow-y-auto" : "overflow-hidden"
-    )} style={{ height: 'calc(100dvh - env(safe-area-inset-bottom))' }}>
+    )}
+    style={{ height: '100svh' }}>
       <ApiKeyModal />
 
       {/* Left Sidebar Navigation - Hidden on mobile */}
