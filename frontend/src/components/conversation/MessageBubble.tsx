@@ -1,9 +1,9 @@
+import React from 'react';
+import { motion } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import { AlertCircle, Bot, CheckCircle2, FileText, Info, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChatMessage } from '@/types';
-import { motion } from 'framer-motion';
-import { Bot, CheckCircle2, FileText, Info, User } from 'lucide-react';
-import React from 'react';
-import ReactMarkdown from 'react-markdown';
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -14,7 +14,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
 
   // System messages render as centered info pills
   if (role === 'system') {
-    return <SystemMessage content={content} />;
+    return <SystemMessage content={content} metadata={message.metadata} />;
   }
 
   const isUser = role === 'user';
@@ -129,15 +129,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
 
         {/* Message metadata for AI messages */}
         {!isUser && (
-          <div className="flex items-center gap-3 text-[10px] text-foreground-muted px-1 mt-1">
+          <div className="flex items-center gap-1.5 text-[10px] text-foreground-muted px-1 mt-1">
             <span className="flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3 text-success" />
               <span>Verified</span>
             </span>
-            {/* <button className="flex items-center gap-1 hover:text-accent transition-colors">
-              <ExternalLink className="w-3 h-3" />
-              <span>Sources</span>
-            </button> */}
+            •
+            {message.metadata?.duration !== undefined && (
+              <span className="text-foreground-muted">
+                {formatDuration(Number(message.metadata.duration))}
+              </span>
+            )}
           </div>
         )}
 
@@ -153,8 +155,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
 /**
  * System messages render as centered subtle pills.
  */
-const SystemMessage: React.FC<{ content: string }> = ({ content }) => {
+const SystemMessage: React.FC<{ content: string; metadata?: Record<string, unknown> }> = ({ content, metadata }) => {
   const isFileEvent = content.startsWith('File created');
+  const isError = metadata?.isError === true;
 
   return (
     <motion.div
@@ -162,13 +165,23 @@ const SystemMessage: React.FC<{ content: string }> = ({ content }) => {
       animate={{ opacity: 1, y: 0 }}
       className="flex justify-center py-2"
     >
-      <div className="inline-flex items-center gap-2 bg-background-secondary border border-border rounded-full px-3.5 py-1.5 max-w-[85%]">
-        {isFileEvent ? (
+      <div className={cn(
+        "flex items-start gap-2 px-3.5 py-2 rounded-lg border",
+        isError 
+          ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800" 
+          : "bg-background-secondary border-border"
+      )}>
+        {isError ? (
+          <AlertCircle className="w-4 h-4 text-red-500 dark:text-red-400 shrink-0 mt-0.5" />
+        ) : isFileEvent ? (
           <FileText className="w-3 h-3 text-success shrink-0" />
         ) : (
           <Info className="w-3 h-3 text-foreground-muted shrink-0" />
         )}
-        <span className="text-[11px] text-foreground-muted leading-tight truncate">
+        <span className={cn(
+          "text-[11px] leading-relaxed whitespace-pre-wrap",
+          isError ? "text-red-600 dark:text-red-400" : "text-foreground-muted"
+        )}>
           {content}
         </span>
       </div>
@@ -185,4 +198,14 @@ function formatTimestamp(timestamp: string): string {
   } catch {
     return '';
   }
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (remainingSeconds === 0) return `${minutes}m`;
+  return `${minutes}m ${remainingSeconds}s`;
 }
