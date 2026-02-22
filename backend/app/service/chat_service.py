@@ -33,6 +33,7 @@ from app.service.task import (
     Action,
     ActionDecomposeProgressData,
     ActionDecomposeTextData,
+    ActionEndData,
     ActionErrorData,
     ActionImproveData,
     Agents,
@@ -341,6 +342,88 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         except Exception as e:
                             logger.error(f"Error deleting task lock: {e}")
                         break
+
+                    # ========================================================
+                    # Feature 6: Direct execution for MODERATE single-agent
+                    # ========================================================
+                    if (
+                        triage_result.complexity == ComplexityLevel.MODERATE
+                        and len(triage_result.suggested_agents) == 1
+                    ):
+                        sole_agent_name = triage_result.suggested_agents[0]
+                        logger.info(
+                            f"[TRIAGE] MODERATE single-agent detected, "
+                            f"attempting direct execution with "
+                            f"'{sole_agent_name}'"
+                        )
+
+                        # Try to find the agent in a cached workforce
+                        direct_agent = _find_agent_in_workforce(
+                            workforce or task_lock.workforce,
+                            sole_agent_name,
+                        )
+
+                        if direct_agent is not None:
+                            logger.info(
+                                f"[DIRECT-EXEC] Reusing agent "
+                                f"'{sole_agent_name}' from cached workforce"
+                            )
+                            direct_agent.reset()  # Clear prior conversation
+
+                            # Build the prompt (question + attachment paths)
+                            direct_prompt = question + options.summary_prompt
+                            if attaches_to_use:
+                                attach_info = "\n".join(
+                                    f"- {p}" for p in attaches_to_use
+                                )
+                                direct_prompt += (
+                                    f"\n\nAttached files:\n{attach_info}"
+                                )
+
+                            task_lock.status = Status.processing
+
+                            # Run agent.step() in background thread
+                            async def _run_direct_agent():
+                                try:
+                                    res = await asyncio.to_thread(
+                                        direct_agent.step, direct_prompt
+                                    )
+                                    result_text = (
+                                        res.msgs[0].content
+                                        if res and res.msgs
+                                        else "No response generated."
+                                    )
+                                except Exception as exc:
+                                    logger.error(
+                                        f"[DIRECT-EXEC] Agent error: {exc}",
+                                        exc_info=True,
+                                    )
+                                    result_text = (
+                                        f"Error during direct execution: {exc}"
+                                    )
+
+                                # Record result
+                                task_lock.add_conversation("user", question)
+                                task_lock.add_conversation(
+                                    "assistant", result_text
+                                )
+                                task_lock.last_task_result = result_text
+                                task_lock.status = Status.done
+
+                                await task_lock.put_queue(ActionEndData())
+
+                            bg = asyncio.create_task(_run_direct_agent())
+                            task_lock.add_background_task(bg)
+                            # Continue the SSE loop — events from the agent
+                            # (activate_agent, tool calls, etc.) will flow
+                            # through the queue, ending with Action.end.
+                            continue
+
+                        logger.info(
+                            f"[DIRECT-EXEC] Agent '{sole_agent_name}' not "
+                            f"found in cached workforce, falling through "
+                            f"to full workforce flow"
+                        )
 
                     # For MODERATE/COMPLEX, continue with workforce flow
                     suggested_agents = triage_result.suggested_agents
@@ -1513,6 +1596,35 @@ the current date.
         tool_names=tool_names,
         custom_model_config=custom_model_config,
     )
+
+
+# ============================================================================
+# Feature 6: Direct Execution helpers
+# ============================================================================
+
+def _find_agent_in_workforce(
+    workforce: Workforce | None,
+    agent_name: str,
+) -> "ListenChatAgent | None":
+    """Locate a worker agent inside a (possibly cached) workforce by name.
+
+    The *agent_name* is matched against the ``agent_id`` attribute that
+    each ``ListenChatAgent`` carries (e.g. ``"radiologist"``).
+
+    Returns the ``ListenChatAgent`` instance, or ``None`` if not found.
+    """
+    if workforce is None:
+        return None
+    for child in getattr(workforce, "_children", []):
+        worker = getattr(child, "worker", None)
+        if worker is None:
+            continue
+        aid = getattr(worker, "agent_id", None) or getattr(
+            worker, "agent_name", None
+        )
+        if aid == agent_name:
+            return worker
+    return None
 
 
 # ============================================================================
