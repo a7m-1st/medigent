@@ -175,6 +175,8 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
     event_loop = asyncio.get_running_loop()
     sub_tasks: list[Task] = []
     cached_agents_replayed = False
+    latest_task_state = "unknown"
+    latest_task_result = ""
 
     # Session timeout: 1 hour (3600 seconds)
     SESSION_TIMEOUT_SECONDS = 3600
@@ -841,8 +843,8 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 task_lock.add_background_task(task)
             elif item.action == Action.task_state:
                 # Track completed task results for the end event
-                task_state = item.data.get("state", "unknown")
-                task_result = item.data.get("result", "")
+                latest_task_state = str(item.data.get("state", "unknown"))
+                latest_task_result = str(item.data.get("result", "") or "")
                 yield sse_json("task_state", item.data)
             elif item.action == Action.create_agent:
                 yield sse_json("create_agent", item.data)
@@ -996,6 +998,21 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 else:
                     get_result = get_task_result_with_optional_summary
                     final_result: str = await get_result(camel_task, options)
+
+                if not str(final_result or "").strip():
+                    if latest_task_result.strip():
+                        final_result = latest_task_result
+                    elif task_lock.last_task_result.strip():
+                        final_result = task_lock.last_task_result
+                    elif latest_task_state.lower() == "failed":
+                        final_result = (
+                            "Task execution failed after maximum retries. "
+                            "No additional details were returned."
+                        )
+                    else:
+                        final_result = (
+                            "Task completed, but no result content was returned."
+                        )
 
                 task_lock.status = Status.done
 

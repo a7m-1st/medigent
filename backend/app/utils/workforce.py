@@ -864,6 +864,10 @@ class Workforce(BaseWorkforce):
         if task.failure_count < max_retries:
             return result
 
+        fallback_error_message = (
+            "Task failed after exhausting all retries. "
+            "No detailed error message was provided by the worker."
+        )
         error_message = ""
         # Use proper CAMEL pattern for metrics logging
         metrics_callbacks = [
@@ -878,6 +882,12 @@ class Workforce(BaseWorkforce):
                     error_message = entry.get("error_message")
                     break
 
+        final_error_message = str(
+            error_message or task.result or fallback_error_message
+        )
+        task.result = final_error_message
+        task.state = TaskState.FAILED
+
         task_lock = get_task_lock(self.api_task_id)
         await task_lock.put_queue(
             ActionTaskStateData(
@@ -886,13 +896,13 @@ class Workforce(BaseWorkforce):
                     "content": task.content,
                     "state": task.state,
                     "failure_count": task.failure_count,
-                    "result": str(error_message),
+                    "result": final_error_message,
                 }
             )
         )
 
         if metrics_callbacks:
-            error_msg = error_message or str(task.result or "Unknown error")
+            error_msg = final_error_message
             # Pass all values during construction since TaskFailedEvent is frozen
             worker_id = (
                 task.assigned_worker_id
