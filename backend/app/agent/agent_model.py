@@ -13,6 +13,7 @@ from camel.types import ModelPlatformType
 
 from app.agent.listen_chat_agent import ListenChatAgent, logger
 from app.model.chat import AgentModelConfig, Chat
+from app.service.model_registry import get_or_create_model
 from app.service.task import ActionCreateAgentData, Agents, get_task_lock
 from app.utils.event_loop_utils import _schedule_async_task
 
@@ -108,11 +109,14 @@ def agent_model(
             f"(auto-compaction enabled at ~90% usage)"
         )
 
-    model = ModelFactory.create(
+    # Use shared model registry to avoid redundant ModelFactory.create() calls.
+    # Identical configurations (same platform/type/key/url) return the same
+    # cached backend instance — typically only 2 are needed (Gemini + MedGemma).
+    model = get_or_create_model(
         model_platform=effective_config["model_platform"].lower(),
         model_type=effective_config["model_type"],
         api_key=effective_config["api_key"],
-        url=effective_config["api_url"],
+        api_url=effective_config["api_url"],
         model_config_dict=model_config or None,
         timeout=600,  # 10 minutes
         **init_params,
