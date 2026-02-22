@@ -188,28 +188,6 @@ class Workforce(BaseWorkforce):
         """
         last_exception: Exception | None = None
 
-        # ── Leniency: on 2+ prior failures, skip LLM coordinator
-        # analysis and force a direct retry to save latency ──
-        if for_failure and task.failure_count >= 2:
-            retry_strategy = (
-                self.failure_handling_config.enabled_strategies[0]
-                if self.failure_handling_config.enabled_strategies
-                else None
-            )
-            logger.info(
-                f"[WF-LENIENT] Forcing direct retry for task {task.id} "
-                f"after {task.failure_count} failures "
-                f"(skipping coordinator LLM analysis)"
-            )
-            return TaskAnalysisResult(
-                reasoning=(
-                    f"Task has failed {task.failure_count} times. "
-                    f"Retrying directly without coordinator analysis "
-                    f"to reduce latency."
-                ),
-                recovery_strategy=retry_strategy,
-            )
-
         for attempt in range(1, _ANALYZE_TASK_MAX_RETRIES + 1):
             try:
                 result = super()._analyze_task(
@@ -219,25 +197,6 @@ class Workforce(BaseWorkforce):
                 )
 
                 if result is not None:
-                    # On 2+ prior failures, accept any result with content
-                    if (
-                        not for_failure
-                        and task.failure_count >= 2
-                        and result.quality_score is not None
-                        and result.quality_score < 80
-                        and task.result
-                        and len(str(task.result)) > 50
-                    ):
-                        logger.info(
-                            f"[WF-QUALITY] Accepting result (score "
-                            f"{result.quality_score}→80) after "
-                            f"{task.failure_count} prior failures "
-                            f"for task {task.id}"
-                        )
-                        result.quality_score = 80
-                        result.recovery_strategy = None
-                        return result
-
                     # Be more lenient for radiologist tasks with MedGemma
                     # Accept results with lower quality if they have content
                     if (

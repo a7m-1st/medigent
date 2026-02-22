@@ -3,7 +3,6 @@
 import datetime
 import json
 import logging
-import re
 
 from camel.agents.chat_agent import AsyncStreamingChatAgentResponse
 from camel.societies.workforce.prompts import PROCESS_TASK_PROMPT
@@ -128,46 +127,6 @@ IMPORTANT RULES:
 - No extra text before or after the tool call block.
 """
     )
-
-
-def _salvage_content_from_response(response_text: str) -> str | None:
-    """Try to extract meaningful content from a response that failed
-    TaskResult parsing.
-
-    The model may have produced useful output but formatted it as a raw
-    tool-call dict, plain text, or malformed JSON instead of a valid
-    TaskResult.  This function attempts to recover that content.
-
-    Returns:
-        The extracted content string, or None if nothing useful found.
-    """
-    if not response_text or len(response_text.strip()) < 50:
-        return None
-
-    # 1. Try to find a JSON object with a "content" field anywhere
-    content_match = re.search(
-        r'"content"\s*:\s*"((?:[^"\\]|\\.)*)"',
-        response_text,
-    )
-    if content_match and len(content_match.group(1)) > 20:
-        return content_match.group(1)
-
-    # 2. Strip <tool_call> blocks and see if remaining text is substantial
-    cleaned = re.sub(
-        r'<tool_call>.*?</tool_call>',
-        '',
-        response_text,
-        flags=re.DOTALL,
-    )
-    cleaned = cleaned.strip()
-    if len(cleaned) > 100:
-        return cleaned
-
-    # 3. If overall response is substantial, return as-is
-    if len(response_text.strip()) > 200:
-        return response_text.strip()
-
-    return None
 
 
 class SingleAgentWorker(BaseSingleAgentWorker):
@@ -325,29 +284,6 @@ class SingleAgentWorker(BaseSingleAgentWorker):
                         },
                     )
                 )
-
-                # Salvage: if structured parsing fell back to the
-                # generic "Task processing failed" but the response
-                # has actual content, try to extract it
-                if (
-                    getattr(task_result, "failed", False)
-                    and getattr(task_result, "content", "")
-                    == "Task processing failed"
-                    and response_content
-                ):
-                    salvaged = _salvage_content_from_response(
-                        response_content
-                    )
-                    if salvaged:
-                        logger.info(
-                            f"Salvaged content from unparseable "
-                            f"response (len={len(salvaged)}) "
-                            f"for task {task.id}"
-                        )
-                        task_result = TaskResult(
-                            content=salvaged,
-                            failed=False,
-                        )
             else:
                 # Use native structured output if supported
                 response = await worker_agent.astep(
