@@ -15,6 +15,7 @@ from app.service.task import (
     ActionStartData,
     ActionStopData,
     ImprovePayload,
+    TaskLock,
     get_or_create_task_lock,
     get_task_lock,
     set_current_task_id,
@@ -75,6 +76,36 @@ async def websocket_chat(ws: WebSocket):
     task_lock = None
     sse_consumer_task: asyncio.Task | None = None
     options: Chat | None = None
+
+    async def _delayed_disconnect_cleanup(lock: TaskLock):
+        """Wait 30 seconds after disconnect, then stop workforce and delete cache."""
+        try:
+            await asyncio.sleep(30)
+            session_logger.warning(
+                "[WS] Disconnect timeout reached (30s), stopping workforce",
+                extra={"project_id": lock.id}
+            )
+            # Stop the workforce and cleanup
+            await lock.cleanup()
+            # Delete the task lock from global cache
+            from app.service.task import task_locks
+            if lock.id in task_locks:
+                del task_locks[lock.id]
+                session_logger.info(
+                    "[WS] Task lock deleted after disconnect timeout",
+                    extra={"project_id": lock.id}
+                )
+        except asyncio.CancelledError:
+            session_logger.info(
+                "[WS] Disconnect cleanup cancelled (client reconnected)",
+                extra={"project_id": lock.id if lock else None}
+            )
+        except Exception as exc:
+            session_logger.error(
+                f"[WS] Error in disconnect cleanup: {exc}",
+                exc_info=True,
+                extra={"project_id": lock.id if lock else None}
+            )
 
     async def _consume_sse_and_forward():
         """Read items from step_solve's async generator and forward them
@@ -140,6 +171,19 @@ async def websocket_chat(ws: WebSocket):
                 options = data
 
                 task_lock = get_or_create_task_lock(data.project_id)
+
+                # Cancel any pending disconnect cleanup (client reconnected)
+                if task_lock.disconnect_cleanup_task and not task_lock.disconnect_cleanup_task.done():
+                    task_lock.disconnect_cleanup_task.cancel()
+                    try:
+                        await task_lock.disconnect_cleanup_task
+                    except asyncio.CancelledError:
+                        pass
+                    task_lock.disconnect_cleanup_task = None
+                    session_logger.info(
+                        "[WS] Cancelled pending disconnect cleanup",
+                        extra={"project_id": data.project_id}
+                    )
 
                 if task_lock.status == Status.done:
                     task_lock.status = Status.confirming
@@ -222,6 +266,20 @@ async def websocket_chat(ws: WebSocket):
                 if task_lock is None:
                     if sup.project_id:
                         task_lock = get_or_create_task_lock(sup.project_id)
+                        
+                        # Cancel any pending disconnect cleanup (client reconnected)
+                        if task_lock.disconnect_cleanup_task and not task_lock.disconnect_cleanup_task.done():
+                            task_lock.disconnect_cleanup_task.cancel()
+                            try:
+                                await task_lock.disconnect_cleanup_task
+                            except asyncio.CancelledError:
+                                pass
+                            task_lock.disconnect_cleanup_task = None
+                            session_logger.info(
+                                "[WS] Cancelled pending disconnect cleanup",
+                                extra={"project_id": sup.project_id}
+                            )
+                        
                         options = Chat(task_id=sup.task_id or "", project_id=sup.project_id, question=sup.question)
                         
                         if sse_consumer_task is None or sse_consumer_task.done():
@@ -368,19 +426,22 @@ async def websocket_chat(ws: WebSocket):
             except (asyncio.CancelledError, Exception):
                 pass
 
-        # Cache workforce for reuse (mirrors SSE disconnect handler)
+        # Schedule delayed cleanup (30s) - stop workforce and delete cache if not reconnected
         if task_lock is not None:
-            wf = task_lock.workforce
-            if wf is None and options is not None:
-                # workforce may have been left in step_solve's local var;
-                # step_solve's disconnect handler already caches it into
-                # task_lock.workforce, so nothing extra to do.
-                pass
             task_lock.status = Status.done
             while not task_lock.queue.empty():
                 try:
                     task_lock.queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
+            
+            # Schedule delayed cleanup task
+            task_lock.disconnect_cleanup_task = asyncio.create_task(
+                _delayed_disconnect_cleanup(task_lock)
+            )
+            session_logger.info(
+                "[WS] Scheduled disconnect cleanup in 30s",
+                extra={"project_id": task_lock.id}
+            )
 
         session_logger.info("[WS] Cleanup complete")

@@ -263,6 +263,10 @@ class TaskLock:
     project session.  Stored here so that ``step_solve`` can skip the
     expensive ``construct_workforce()`` call on follow-up messages."""
 
+    disconnect_cleanup_task: asyncio.Task | None
+    """Task that handles delayed cleanup after WebSocket disconnect.
+    Cancelled if client reconnects within the timeout period."""
+
     def __init__(
         self, id: str, queue: asyncio.Queue, human_input: dict
     ) -> None:
@@ -283,6 +287,9 @@ class TaskLock:
 
         # Workforce reuse (Feature 3)
         self.workforce = None
+
+        # Disconnect cleanup task
+        self.disconnect_cleanup_task = None
 
         logger.info(
             "Task lock initialized",
