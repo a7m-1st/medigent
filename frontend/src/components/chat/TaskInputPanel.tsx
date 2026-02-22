@@ -7,7 +7,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AlertTriangle, Camera, FileText, Paperclip, PauseCircle, Send, Upload, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 // Default model configuration from environment variables
 const DEFAULT_MODEL_PLATFORM = import.meta.env.VITE_DEFAULT_MODEL_PLATFORM || 'GEMINI';
@@ -24,6 +24,7 @@ const MOBILE_BREAKPOINT = 768;
 
 export const TaskInputPanel: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState<AttachedFile[]>([]);
   const [isFocused, setIsFocused] = useState(false);
@@ -274,12 +275,23 @@ export const TaskInputPanel: React.FC = () => {
         console.log('Message sent successfully');
 
         // If this was a new chat (no existing project), navigate to project page
+        // BUT skip navigation when on the Dashboard (/) because the Dashboard
+        // already renders ConversationPanel + MonitoringPanel. Navigating away
+        // would unmount the component tree, tearing down the WebSocket
+        // connection and losing the streaming response.
         const newProjectId = useChatStore.getState().currentProjectId;
         if (!existingProjectId && newProjectId) {
           // Persist the user message to the project before navigating,
           // so ProjectPage's useEffect can reload it from projectStore.
           useProjectStore.getState().addMessageToProject(newProjectId, userMsg);
-          navigate(`/project/${newProjectId}`);
+
+          const isDashboard = location.pathname === '/';
+          if (isDashboard) {
+            // Silently update the URL so a page refresh lands on the project page
+            window.history.replaceState(null, '', `/project/${newProjectId}`);
+          } else {
+            navigate(`/project/${newProjectId}`);
+          }
         }
       } catch (error) {
         console.error('Failed to send:', error);
