@@ -37,7 +37,9 @@ function isMainAgent(name: string): boolean {
 }
 
 /**
- * Hook to handle all SSE events and route to appropriate stores.
+ * Hook to handle all server events and route to appropriate stores.
+ * Events arrive over WebSocket in the same {"step": ..., "data": ...} format
+ * that was previously used with SSE. The handler is transport-agnostic.
  * 
  * KEY DESIGN DECISION: The backend uses different agent_ids across different events
  * for the same agent. For example, create_agent might assign id "431ef789..." but
@@ -421,11 +423,11 @@ export function useSSEHandler(options: SSEHandlerOptions = {}) {
     const isRateLimit = /429|rate.?limit|too many requests|quota.*exceed/i.test(msg);
 
     // Display the error but don't reset connection state
-    // SSE will auto-retry on rate limits
+    // WebSocket stays open; the backend may retry the operation
     chatStore.setError(msg, isRateLimit ? 'rate_limit' : 'generic');
 
     // Only mark agents as having an error, but keep the session alive
-    // so SSE can retry
+    // so the backend can retry on the persistent WS connection
     if (!isRateLimit) {
       // For non-rate-limit errors, we might want to stop
       chatStore.setStreaming(false);
@@ -444,12 +446,12 @@ export function useSSEHandler(options: SSEHandlerOptions = {}) {
         }
       }
     }
-    // For rate limit errors, keep the session running so SSE can retry
+    // For rate limit errors, keep the session running so the backend can retry
   }
 
   function handleBudgetNotEnough(data: any) {
     chatStore.setError('Budget not enough: ' + (data.message || 'Insufficient budget'), 'budget');
-    // Keep session running so SSE can retry
+    // Keep session running — backend may retry or user can send a new message
   }
 
   return { handleEvent };

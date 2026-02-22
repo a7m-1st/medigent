@@ -14,7 +14,7 @@ interface ChatState {
   error: string | null
   errorType: ErrorType
   streamingContent: string
-  isSSEConnected: boolean
+  isConnected: boolean
   wasStopped: boolean
   waitingForHumanReply: boolean
   currentAskAgent: string | null
@@ -32,7 +32,7 @@ interface ChatState {
   setCurrentProject: (projectId: string | null) => void
   setError: (error: string | null, type?: ErrorType) => void
   clearError: () => void
-  setSSEConnected: (isConnected: boolean) => void
+  setConnected: (isConnected: boolean) => void
   setWasStopped: (wasStopped: boolean) => void
   setWaitingForHumanReply: (waiting: boolean, agent: string | null, displayName?: string | null) => void
   setPendingInput: (input: string | null) => void
@@ -49,7 +49,7 @@ const initialState = {
   error: null,
   errorType: null as ErrorType,
   streamingContent: '',
-  isSSEConnected: false,
+  isConnected: false,
   wasStopped: false,
   waitingForHumanReply: false,
   currentAskAgent: null as string | null,
@@ -119,9 +119,9 @@ export const useChatStore = create<ChatState>()(
         state.errorType = null
       }),
 
-    setSSEConnected: (isConnected) =>
+    setConnected: (isConnected) =>
       set((state) => {
-        state.isSSEConnected = isConnected
+        state.isConnected = isConnected
       }),
 
     setWasStopped: (wasStopped) =>

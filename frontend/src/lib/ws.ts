@@ -48,11 +48,11 @@ export interface WSConnectionState {
 /**
  * Persistent WebSocket connection class.
  *
- * Provides the same callback-driven API as ``SSEConnection`` but uses a
- * single bidirectional WebSocket.  All client-to-server commands (start_chat,
- * improve, stop, human_reply, start_task) are sent via {@link send}.  Server
- * events arrive in the same ``{"step": ..., "data": ...}`` JSON format as
- * SSE and are validated with the same Zod schema.
+ * Provides a callback-driven API for bidirectional communication with the
+ * backend.  All client-to-server commands (start_chat, improve, stop,
+ * human_reply, start_task) are sent via {@link send}.  Server events arrive
+ * in the ``{"step": ..., "data": ...}`` JSON format and are validated with
+ * the provided Zod schema.
  */
 export class WSConnection<TEvent> {
   private ws: WebSocket | null = null;

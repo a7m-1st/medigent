@@ -20,6 +20,13 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      '/ws': {
+        target: 'http://localhost:8000',
+        ws: true,
+        changeOrigin: true,
+        secure: false,
+      },
     },
+    host: "0.0.0.0"
   },
 })

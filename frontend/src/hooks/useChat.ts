@@ -39,7 +39,7 @@ export interface UseChatReturn {
   currentProjectId: string | null;
   error: string | null;
   streamingContent: string;
-  isSSEConnected: boolean;
+  isConnected: boolean;
   startChat: (data: Chat) => Promise<void>;
   continueChat: (data: SupplementChat) => Promise<void>;
   stopChat: () => Promise<void>;
@@ -88,7 +88,7 @@ export function useChat(): UseChatReturn {
       wsRef.current.disconnect();
       wsRef.current = null;
     }
-    store.setSSEConnected(false);
+    store.setConnected(false);
   }, [store]);
 
   useEffect(() => {
@@ -127,7 +127,7 @@ export function useChat(): UseChatReturn {
       maxReconnectDelay: 30000,
       onOpen: () => {
         console.log('[WS] Connection opened');
-        store.setSSEConnected(true);
+        store.setConnected(true);
       },
       onMessage: (event) => {
         console.log('[WS] Message received:', event);
@@ -143,7 +143,7 @@ export function useChat(): UseChatReturn {
         console.log(`[WS] Connection closed (code=${_code})`);
         if (wsRef.current === ws) {
           store.setStreaming(false);
-          store.setSSEConnected(false);
+          store.setConnected(false);
         }
       },
     });
@@ -215,7 +215,7 @@ export function useChat(): UseChatReturn {
         const message = error instanceof Error ? error.message : 'Failed to start chat';
         store.setError(message);
         store.setStreaming(false);
-        store.setSSEConnected(false);
+        store.setConnected(false);
       } finally {
         store.setLoading(false);
       }
@@ -334,7 +334,7 @@ export function useChat(): UseChatReturn {
     try {
       store.setWasStopped(true);
       store.setStreaming(false);
-      store.setSSEConnected(false);
+      store.setConnected(false);
       store.setLoading(true);
 
       // Cancel all pending/running tasks in the task tree
@@ -419,7 +419,7 @@ export function useChat(): UseChatReturn {
   const reset = useCallback(() => {
     cleanupWS();
     store.reset();
-    store.setSSEConnected(false);
+    store.setConnected(false);
     agentStatusStore.reset();
     taskDecompStore.reset();
     resourceStore.reset();
@@ -433,7 +433,7 @@ export function useChat(): UseChatReturn {
     currentProjectId: store.currentProjectId,
     error: store.error,
     streamingContent: store.streamingContent,
-    isSSEConnected: store.isSSEConnected,
+    isConnected: store.isConnected,
     startChat,
     continueChat,
     stopChat,
