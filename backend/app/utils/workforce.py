@@ -26,7 +26,16 @@ from camel.societies.workforce.workforce import (
     WorkforceState,
 )
 from camel.societies.workforce.workforce_metrics import WorkforceMetrics
-from camel.tasks.task import Task, TaskState, validate_task_content
+from camel.tasks.task import (
+    Task,
+    TaskState,
+    is_task_result_insufficient,
+    validate_task_content,
+)
+
+# Feature 4 — batch drain window in seconds.  After one returned task
+# arrives we wait up to this long for additional results before processing.
+_BATCH_DRAIN_WINDOW: float = 0.15
 
 from app.agent.listen_chat_agent import ListenChatAgent
 from app.component import code
@@ -1121,3 +1130,247 @@ class Workforce(BaseWorkforce):
             "workforce ready for reuse",
             extra={"api_task_id": self.api_task_id, "workforce_id": id(self)},
         )
+
+    # ------------------------------------------------------------------
+    # Feature 4: Concurrent subtask execution — batch-drain returned tasks
+    # ------------------------------------------------------------------
+
+    async def _drain_returned_tasks(
+        self,
+        first: Task,
+        window: float = _BATCH_DRAIN_WINDOW,
+    ) -> list[Task]:
+        """Collect *first* plus any additional returned tasks that arrive
+        within *window* seconds.
+
+        Workers execute concurrently, so several tasks may complete almost
+        simultaneously.  Instead of processing them one-by-one (each
+        requiring a separate loop iteration with pause/stop checks and
+        snapshot logic), we batch-drain the channel and hand them back
+        to the caller for streamlined processing.
+
+        Args:
+            first: The first returned task (already awaited by caller).
+            window: Maximum time (seconds) to wait for more results.
+
+        Returns:
+            A list starting with *first* followed by any extras.
+        """
+        batch: list[Task] = [first]
+        deadline = asyncio.get_event_loop().time() + window
+        while True:
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                break
+            try:
+                extra = await asyncio.wait_for(
+                    self._channel.get_returned_task_by_publisher(
+                        self.node_id
+                    ),
+                    timeout=remaining,
+                )
+                if extra is not None:
+                    batch.append(extra)
+            except (TimeoutError, asyncio.TimeoutError):
+                break
+            except Exception:
+                break
+        if len(batch) > 1:
+            logger.info(
+                f"[WF-BATCH] Drained {len(batch)} returned tasks "
+                f"in one batch"
+            )
+        return batch
+
+    async def _listen_to_channel(self) -> None:
+        """Optimised main loop with batch-drain of returned tasks.
+
+        This override replaces the base-class ``_listen_to_channel``
+        to reduce per-iteration overhead when multiple workers finish
+        at roughly the same time.  After the first returned task
+        arrives we wait up to ``_BATCH_DRAIN_WINDOW`` seconds for
+        additional results, then process the whole batch before
+        calling ``_post_ready_tasks()`` (which may trigger an LLM
+        coordinator call to assign newly-unblocked subtasks).
+        """
+        self._running = True
+        self._state = WorkforceState.RUNNING
+        logger.info(f"Workforce {self.node_id} started (batch-drain mode).")
+
+        await self._post_ready_tasks()
+
+        while (
+            self._task is None
+            or self._pending_tasks
+            or self._in_flight_tasks > 0
+        ) and not self._stop_requested:
+            try:
+                # ---- pause / stop / skip guards (from base class) ----
+                await self._pause_event.wait()
+                if self._stop_requested:
+                    logger.info("Stop requested, breaking execution loop.")
+                    break
+                if self._skip_requested:
+                    should_stop = await self._handle_skip_task()
+                    if should_stop:
+                        self._stop_requested = True
+                        break
+                    self._skip_requested = False
+                    continue
+
+                # ---- exit if nothing left ----
+                if not self._pending_tasks and self._in_flight_tasks == 0:
+                    break
+
+                # ---- decompose main tasks that were added dynamically ----
+                if self._pending_tasks and self._in_flight_tasks == 0:
+                    next_task = self._pending_tasks[0]
+                    if (
+                        next_task.additional_info
+                        and next_task.additional_info.get(
+                            "_needs_decomposition"
+                        )
+                    ):
+                        logger.info(
+                            f"Decomposing main task: {next_task.id}"
+                        )
+                        try:
+                            next_task.additional_info[
+                                "_needs_decomposition"
+                            ] = False
+                            await self.handle_decompose_append_task(
+                                next_task, reset=False
+                            )
+                            await self._handle_completed_task(next_task)
+                        except Exception as e:
+                            logger.error(
+                                f"Error decomposing main task "
+                                f"{next_task.id}: {e}",
+                                exc_info=True,
+                            )
+                            if not self._pending_tasks:
+                                self._pending_tasks.appendleft(next_task)
+                        await self._post_ready_tasks()
+                        continue
+
+                # ---- await first returned task ----
+                try:
+                    first_task = await self._get_returned_task()
+                except asyncio.TimeoutError:
+                    if self._in_flight_tasks > 0:
+                        logger.warning(
+                            f"Timeout waiting for "
+                            f"{self._in_flight_tasks} in-flight tasks."
+                        )
+                        break
+                    await self._post_ready_tasks()
+                    continue
+
+                if first_task is None:
+                    await self._post_ready_tasks()
+                    continue
+
+                # ---- Feature 4: batch-drain any extras ----
+                batch = await self._drain_returned_tasks(first_task)
+
+                for returned_task in batch:
+                    self._decrement_in_flight_tasks(
+                        returned_task.id, "task returned (batch)"
+                    )
+
+                if self._stop_requested:
+                    break
+
+                # ---- process each task in the batch ----
+                for returned_task in batch:
+                    if returned_task.state == TaskState.DONE:
+                        # Quick insufficient-result guard (matches
+                        # base-class inline check).  Full LLM-based
+                        # quality evaluation is intentionally skipped
+                        # here; the worker already validates results
+                        # via is_task_result_insufficient before
+                        # returning DONE.
+                        if is_task_result_insufficient(returned_task):
+                            logger.warning(
+                                f"[WF-BATCH] Task {returned_task.id} "
+                                f"marked DONE but result is "
+                                f"insufficient — treating as FAILED."
+                            )
+                            returned_task.state = TaskState.FAILED
+                            try:
+                                halt = await self._handle_failed_task(
+                                    returned_task
+                                )
+                                if halt:
+                                    if (
+                                        len(self.get_main_task_queue())
+                                        > 0
+                                    ):
+                                        self._skip_requested = True
+                                    else:
+                                        await self._graceful_shutdown(
+                                            returned_task
+                                        )
+                                        self._stop_requested = True
+                                    break
+                            except Exception as e:
+                                logger.error(
+                                    f"Error handling insufficient task "
+                                    f"{returned_task.id}: {e}",
+                                    exc_info=True,
+                                )
+                        else:
+                            await self._handle_completed_task(
+                                returned_task
+                            )
+                    elif returned_task.state == TaskState.FAILED:
+                        try:
+                            halt = await self._handle_failed_task(
+                                returned_task
+                            )
+                            if halt:
+                                if len(self.get_main_task_queue()) > 0:
+                                    self._skip_requested = True
+                                else:
+                                    await self._graceful_shutdown(
+                                        returned_task
+                                    )
+                                    self._stop_requested = True
+                                break
+                        except Exception as e:
+                            logger.error(
+                                f"Error handling failed task "
+                                f"{returned_task.id}: {e}",
+                                exc_info=True,
+                            )
+                    elif returned_task.state == TaskState.OPEN:
+                        pass
+                    else:
+                        raise ValueError(
+                            f"Task {returned_task.id} has an "
+                            f"unexpected state."
+                        )
+
+            except Exception as e:
+                self._decrement_in_flight_tasks(
+                    "unknown", "exception in task processing loop"
+                )
+                logger.error(
+                    f"Error processing task in workforce "
+                    f"{self.node_id}: {e}. "
+                    f"Pending: {len(self._pending_tasks)}, "
+                    f"In-flight: {self._in_flight_tasks}, "
+                    f"Completed: {len(self._completed_tasks)}"
+                )
+                if self._stop_requested:
+                    break
+                continue
+
+        # ---- final state ----
+        if self._stop_requested:
+            self._state = WorkforceState.STOPPED
+            logger.info("Workforce stopped by user request.")
+        elif not self._pending_tasks and self._in_flight_tasks == 0:
+            self._state = WorkforceState.IDLE
+            logger.info("All tasks completed.")
+        self.stop()
