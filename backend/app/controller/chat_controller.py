@@ -222,6 +222,20 @@ async def post(data: Chat, request: Request):
 
     task_lock = get_or_create_task_lock(data.project_id)
 
+    # Feature 3: When reusing an existing task_lock (follow-up in same
+    # project), drain any stale queue items from the prior SSE session
+    # and replace the queue so the new step_solve starts clean.
+    if not task_lock.queue.empty():
+        while not task_lock.queue.empty():
+            try:
+                task_lock.queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        chat_logger.info(
+            "Drained stale queue items from reused task_lock",
+            extra={"project_id": data.project_id},
+        )
+
     # Load conversation history from frontend (last N messages for context)
     if data.history and len(data.history) > 0:
         for msg in data.history:

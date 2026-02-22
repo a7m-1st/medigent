@@ -138,31 +138,40 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
             logger.warning("=" * 80)
             if workforce is not None:
                 logger.info(
-                    "[LIFECYCLE] Stopping workforce "
-                    "due to client disconnect, "
+                    "[LIFECYCLE] Caching workforce "
+                    "in task_lock before disconnect, "
                     "workforce._running="
                     f"{workforce._running}"
                 )
                 if workforce._running:
                     workforce.stop()
                 workforce.stop_gracefully()
+                # Feature 3: Cache workforce for reuse instead of destroying
+                task_lock.workforce = workforce
+                workforce = None
                 logger.info(
-                    "[LIFECYCLE] Workforce stopped after client disconnect"
+                    "[LIFECYCLE] Workforce cached in task_lock "
+                    "after client disconnect"
                 )
             else:
                 logger.info("[LIFECYCLE] Workforce is None, no need to stop")
             task_lock.status = Status.done
-            try:
-                await delete_task_lock(task_lock.id)
-                logger.info(
-                    "[LIFECYCLE] Task lock deleted after client disconnect"
-                )
-            except Exception as e:
-                logger.error(f"Error deleting task lock on disconnect: {e}")
+            # Feature 3: DON'T delete task_lock on disconnect — keep it
+            # alive so the next POST /chat for the same project can
+            # reuse the cached workforce.  Stale task_locks are cleaned
+            # up by the periodic cleanup task.
+            # Drain any stale items from the queue (e.g. ActionEndData
+            # queued by workforce.stop()) so the next step_solve doesn't
+            # pick them up.
+            while not task_lock.queue.empty():
+                try:
+                    task_lock.queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
             logger.info(
                 "[LIFECYCLE] Breaking out of "
                 "step_solve loop due to "
-                "client disconnect"
+                "client disconnect (task_lock preserved)"
             )
             break
         try:
@@ -351,6 +360,24 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     logger.debug(
                         "[NEW-QUESTION] Reusing "
                         "existing workforce "
+                        f"(id={id(workforce)})"
+                    )
+                    # Prepare workforce for the new task (reset memory,
+                    # clear bookkeeping, keep workers alive)
+                    workforce.prepare_for_new_task()
+                    logger.info(
+                        "[NEW-QUESTION] Workforce reset "
+                        "for reuse via prepare_for_new_task()"
+                    )
+                elif task_lock.workforce is not None:
+                    # Recover workforce cached in task_lock from
+                    # a prior Action.end (Feature 3: workforce reuse)
+                    workforce = task_lock.workforce
+                    task_lock.workforce = None
+                    workforce.prepare_for_new_task()
+                    logger.info(
+                        "[NEW-QUESTION] Reusing CACHED "
+                        "workforce from task_lock "
                         f"(id={id(workforce)})"
                     )
                 else:
@@ -770,52 +797,36 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
 
                 yield sse_json("end", final_result)
 
+                # Feature 3: Cache workforce for reuse instead of destroying it.
+                # Keep the SSE loop alive so follow-up messages (via POST
+                # /chat/{id}) can be processed without a new SSE connection.
                 if workforce is not None:
                     logger.info(
-                        "[LIFECYCLE] Calling "
-                        "workforce.stop_gracefully()"
-                        " for project "
-                        f"{options.project_id}, "
+                        "[LIFECYCLE] Caching workforce "
+                        "in task_lock for reuse, "
                         f"workforce id={id(workforce)}"
                     )
+                    task_lock.workforce = workforce
+                    # Stop child listening tasks gracefully
+                    # (they'll be restarted on next task)
                     workforce.stop_gracefully()
-                    logger.info(
-                        "[LIFECYCLE] Workforce "
-                        "stopped gracefully for "
-                        "project "
-                        f"{options.project_id}"
-                    )
                     workforce = None
-                    logger.info("[LIFECYCLE] Workforce set to None")
-                else:
-                    logger.warning(
-                        "[LIFECYCLE] Workforce "
-                        "already None at end "
-                        "action for project "
-                        f"{options.project_id}"
+                    logger.info(
+                        "[LIFECYCLE] Workforce cached "
+                        "and local ref set to None"
                     )
 
                 camel_task = None
                 logger.info("[LIFECYCLE] camel_task set to None")
 
-                # Close SSE connection after task ends
+                # DON'T break — keep SSE loop alive for follow-up messages.
+                # The loop will exit on Action.stop, client disconnect,
+                # or session timeout.
                 logger.info(
-                    "[LIFECYCLE] Breaking out of "
-                    "step_solve loop to close SSE "
-                    "connection after task end"
+                    "[LIFECYCLE] SSE loop kept alive "
+                    "for follow-up messages "
+                    f"(project {options.project_id})"
                 )
-                try:
-                    await delete_task_lock(task_lock.id)
-                    logger.info(
-                        "[LIFECYCLE] Task lock deleted "
-                        "after task end"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Error deleting task lock "
-                        f"on end: {e}"
-                    )
-                break
 
             elif item.action == Action.stop:
                 logger.info("=" * 80)

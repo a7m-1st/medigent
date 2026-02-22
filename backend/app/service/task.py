@@ -257,6 +257,12 @@ class TaskLock:
     current_task_id: str | None
     """Current task ID to be used in SSE responses"""
 
+    # Workforce reuse (Feature 3)
+    workforce: Any | None
+    """Cached workforce instance for reuse across tasks within the same
+    project session.  Stored here so that ``step_solve`` can skip the
+    expensive ``construct_workforce()`` call on follow-up messages."""
+
     def __init__(
         self, id: str, queue: asyncio.Queue, human_input: dict
     ) -> None:
@@ -274,6 +280,9 @@ class TaskLock:
         self.last_task_summary = ""
         self.question_agent = None
         self.current_task_id = None
+
+        # Workforce reuse (Feature 3)
+        self.workforce = None
 
         logger.info(
             "Task lock initialized",
@@ -340,6 +349,23 @@ class TaskLock:
                 "background_tasks_count": len(self.background_tasks),
             },
         )
+
+        # Clean up cached workforce (Feature 3)
+        if self.workforce is not None:
+            try:
+                if hasattr(self.workforce, "stop_gracefully"):
+                    self.workforce.stop_gracefully()
+                logger.info(
+                    "Cached workforce cleaned up",
+                    extra={"task_id": self.id},
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to cleanup cached workforce: {e}",
+                    extra={"task_id": self.id},
+                )
+            self.workforce = None
+
         for task in list(self.background_tasks):
             if not task.done():
                 task.cancel()

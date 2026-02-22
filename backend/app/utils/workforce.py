@@ -1052,3 +1052,72 @@ class Workforce(BaseWorkforce):
             await delete_task_lock(self.api_task_id)
         except Exception as e:
             logger.error(f"Error cleaning up workforce resources: {e}")
+
+    # ------------------------------------------------------------------
+    # Feature 3: Workforce reuse across tasks within the same project
+    # ------------------------------------------------------------------
+
+    def prepare_for_new_task(self) -> None:
+        """Reset the workforce so it can execute a brand-new task without
+        the cost of rebuilding workers, models, and toolkits from scratch.
+
+        This clears internal bookkeeping (pending/completed/in-flight tasks,
+        assignments, dependency maps) and resets every worker agent's memory
+        so that prior conversation doesn't leak into the next task.  The
+        workers, channel, and coordinator/task agents are kept intact.
+        """
+        logger.info(
+            "[WF-REUSE] prepare_for_new_task() called",
+            extra={"api_task_id": self.api_task_id, "workforce_id": id(self)},
+        )
+
+        # 1. Clear task bookkeeping
+        self._pending_tasks.clear()
+        self._completed_tasks.clear()
+        self._in_flight_tasks = 0
+        self._task = None
+        self._assignees.clear()
+        self._task_dependencies.clear()
+        self._stop_requested = False
+
+        # 2. Reset state to IDLE so start() can be called again
+        self._state = WorkforceState.IDLE
+        self._running = False
+
+        # 3. Reset pause event (ensure not paused)
+        if hasattr(self, "_pause_event"):
+            self._pause_event.set()
+
+        # 4. Clear agent memory on coordinator and task agents
+        if hasattr(self, "coordinator_agent") and self.coordinator_agent:
+            self.coordinator_agent.reset()
+        if hasattr(self, "task_agent") and self.task_agent:
+            self.task_agent.reset()
+
+        # 5. Reset each worker's agent memory (but keep the agent alive)
+        for child in self._children:
+            if isinstance(child, SingleAgentWorker):
+                # Reset the primary worker agent
+                if hasattr(child, "worker") and child.worker is not None:
+                    child.worker.reset()
+                # Reset any pooled clones
+                if hasattr(child, "_agent_pool"):
+                    for pooled_agent in child._agent_pool:
+                        pooled_agent.reset()
+
+        # 6. Recreate channel so old task packets don't leak
+        self.set_channel(TaskChannel())
+        for child in self._children:
+            child.set_channel(self._channel)
+
+        # 7. Cancel stale child listening tasks and restart workers
+        for task in getattr(self, "_child_listening_tasks", []):
+            if not task.done():
+                task.cancel()
+        self._child_listening_tasks = []
+
+        logger.info(
+            "[WF-REUSE] prepare_for_new_task() completed — "
+            "workforce ready for reuse",
+            extra={"api_task_id": self.api_task_id, "workforce_id": id(self)},
+        )
