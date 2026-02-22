@@ -27,7 +27,6 @@ import {
 } from '@/stores';
 import { useProjectStore } from '@/stores/projectStore';
 import { MAIN_AGENT_NAMES, AGENT_DISPLAY_NAMES } from '@/stores/agentStatusStore';
-import * as taskService from '@/services/taskService';
 import type { ChatMessage } from '@/types';
 
 // ============================================
@@ -45,7 +44,16 @@ function isMainAgent(name: string): boolean {
  * activate_agent uses id "b9acbcd8..." for the same clinical_researcher. The agent_name
  * is the ONLY consistent identifier, so all lookups go through agent_name.
  */
-export function useSSEHandler() {
+export interface SSEHandlerOptions {
+  /**
+   * Callback invoked when task decomposition is final and the task should
+   * be auto-started.  When using WebSocket, this sends a ``start_task``
+   * message over the existing connection instead of making a REST call.
+   */
+  onStartTask?: (projectId: string) => void;
+}
+
+export function useSSEHandler(options: SSEHandlerOptions = {}) {
   const agentStore = useAgentStatusStore();
   const taskStore = useTaskDecompStore();
   const resourceStore = useResourceStore();
@@ -240,21 +248,18 @@ export function useSSEHandler() {
     // Auto-start task execution when decomposition is final
     if (data.is_final && data.project_id) {
       console.log('[SSEHandler] Decomposition final, auto-starting task for project:', data.project_id);
-      taskService.startTask(data.project_id).catch((err) => {
-        console.error('[SSEHandler] Failed to auto-start task:', err);
-        // Extract error message from various error types (Error, ApiError, or plain object)
-        let errorMsg = 'Unknown error';
-        if (err instanceof Error) {
-          errorMsg = err.message;
-        } else if (typeof err === 'object' && err !== null && 'error' in err) {
-          errorMsg = String((err as any).error);
-        } else if (typeof err === 'string') {
-          errorMsg = err;
-        } else {
-          errorMsg = String(err);
+      if (options.onStartTask) {
+        // Send start_task over the existing WebSocket connection
+        try {
+          options.onStartTask(data.project_id);
+        } catch (err: unknown) {
+          console.error('[SSEHandler] Failed to auto-start task via WS:', err);
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          chatStore.setError('Failed to start task execution: ' + errorMsg);
         }
-        chatStore.setError('Failed to start task execution: ' + errorMsg);
-      });
+      } else {
+        console.warn('[SSEHandler] No onStartTask callback — cannot auto-start task');
+      }
     }
   }
 
