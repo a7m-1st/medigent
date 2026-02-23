@@ -1,8 +1,20 @@
+import logging
 import os
 from pathlib import Path
 
 import debugpy
 from dotenv import load_dotenv
+
+# Configure root logger so all app loggers (workforce, chat_service,
+# toolkit_pool, toolkit_listen, etc.) emit INFO-level output to stderr.
+# Uvicorn only configures its own "uvicorn.*" loggers — our named loggers
+# inherit from the root which defaults to WARNING, silently dropping
+# all INFO/DEBUG messages unless we set it up here.
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format="%(asctime)s | %(levelname)-7s | %(name)-20s | %(message)s",
+#     datefmt="%H:%M:%S",
+# )
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
