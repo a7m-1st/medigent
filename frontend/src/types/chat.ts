@@ -62,7 +62,13 @@ export const ChatSchema = z.object({
   api_key: z.string(),
   api_url: z.string().nullable().optional(),
   max_retries: z.number().default(5),
-  installed_mcp: z.record(z.string(), z.unknown()).default({}),
+  installed_mcp: z.object({
+    mcpServers: z.record(z.string(), z.object({
+      url: z.string(),
+      headers: z.record(z.string(), z.string()).optional(),
+      type: z.enum(['sse', 'streamable_http', 'websocket']).optional(),
+    })),
+  }).default({ mcpServers: {} }),
   summary_prompt: z.string().default(''),
   use_simulated_tool_calling: z.boolean().default(false),
   secondary_agent: AgentConfigSchema.nullable().optional(),

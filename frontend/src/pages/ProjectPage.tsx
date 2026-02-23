@@ -1,4 +1,5 @@
 import { ApiKeyModal } from '@/components/api-key/ApiKeyModal';
+import { McpConfigDialog } from '@/components/mcp/McpConfigDialog';
 import { TaskInputPanel } from '@/components/chat/TaskInputPanel';
 import { ConversationPanel } from '@/components/conversation/ConversationPanel';
 import { ErrorBanner } from '@/components/layout/ErrorBanner';
@@ -6,6 +7,7 @@ import { MonitoringPanel } from '@/components/task-panel/MonitoringPanel';
 import { cn } from '@/lib/utils';
 import { useAgentStatusStore, useResourceStore, useTaskDecompStore, useUIStore } from '@/stores';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
+import { useMcpStore } from '@/stores/mcpStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -21,6 +23,7 @@ import {
   Moon,
   PanelRightClose,
   PanelRightOpen,
+  Plug,
   Settings,
   Sun,
 } from 'lucide-react';
@@ -190,6 +193,11 @@ export const ProjectPage: React.FC = () => {
             onClick={() => setModalOpen(true)}
             tooltip="API Config"
           />
+          <NavIcon
+            icon={<Plug className="w-5 h-5" />}
+            onClick={() => useMcpStore.getState().setDialogOpen(true)}
+            tooltip="MCP Servers"
+          />
           <Link to="/thank-you">
             <NavIcon icon={<HelpCircle className="w-5 h-5" />} />
           </Link>
@@ -339,6 +347,7 @@ export const ProjectPage: React.FC = () => {
 
       {/* API Key Modal */}
       <ApiKeyModal />
+      <McpConfigDialog />
     </div>
   );
 };

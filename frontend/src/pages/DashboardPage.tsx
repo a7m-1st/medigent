@@ -1,4 +1,5 @@
 import { ApiKeyModal } from '@/components/api-key/ApiKeyModal';
+import { McpConfigDialog } from '@/components/mcp/McpConfigDialog';
 import { TaskInputPanel } from '@/components/chat/TaskInputPanel';
 import { ConversationPanel } from '@/components/conversation/ConversationPanel';
 import { ErrorBanner } from '@/components/layout/ErrorBanner';
@@ -12,6 +13,7 @@ import {
   useUIStore,
 } from '@/stores';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
+import { useMcpStore } from '@/stores/mcpStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -24,6 +26,7 @@ import {
   Moon,
   PanelRightClose,
   PanelRightOpen,
+  Plug,
   Settings,
   Sun,
 } from 'lucide-react';
@@ -153,6 +156,7 @@ export const DashboardPage: React.FC = () => {
       style={{ height: '100svh' }}
     >
       <ApiKeyModal />
+      <McpConfigDialog />
 
       {/* Left Sidebar Navigation - Hidden on mobile */}
       <aside
@@ -188,6 +192,11 @@ export const DashboardPage: React.FC = () => {
             icon={<Settings className="w-5 h-5" />}
             onClick={() => useApiConfigStore.getState().setModalOpen(true)}
             tooltip="API Config"
+          />
+          <NavIcon
+            icon={<Plug className="w-5 h-5" />}
+            onClick={() => useMcpStore.getState().setDialogOpen(true)}
+            tooltip="MCP Servers"
           />
           <Link to="/thank-you">
             <NavIcon

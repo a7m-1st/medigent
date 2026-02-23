@@ -96,6 +96,12 @@ IMPORTANT: When answering, ONLY state what the user said from the context above.
 ## Attached Files
 {attachments}
 
+## Available MCP Servers
+The following MCP (Model Context Protocol) servers are available and can provide additional tools:
+{mcp_servers}
+
+If specific MCP servers are available that match the task requirements, you may consider routing to MODERATE instead of COMPLEX if the MCP tools can handle the task efficiently.
+
 ## Your Task
 Analyze the question and respond in this EXACT format:
 
@@ -178,6 +184,7 @@ async def evaluate_task_complexity(
     question: str,
     attachments: list[str] | None = None,
     conversation_context: str = "",
+    installed_mcp: dict | None = None,
 ) -> TriageResult:
     """
     Evaluate the complexity of a user's question using the coordinator agent.
@@ -187,6 +194,7 @@ async def evaluate_task_complexity(
         question: The user's question
         attachments: List of file paths attached to the question
         conversation_context: Previous conversation context for continuity
+        installed_mcp: MCP server configuration with mcpServers dict
 
     Returns:
         TriageResult with complexity level and optional direct answer
@@ -197,11 +205,20 @@ async def evaluate_task_complexity(
     else:
         attachments_info = "None"
 
+    # Extract MCP server names if available
+    mcp_servers_info = "None"
+    if installed_mcp:
+        mcp_servers = installed_mcp.get("mcpServers", {})
+        if mcp_servers:
+            server_names = list(mcp_servers.keys())
+            mcp_servers_info = ", ".join(server_names) if server_names else "None"
+
     # Build the triage prompt with conversation context
     prompt = TRIAGE_PROMPT.format(
         conversation_context=conversation_context if conversation_context else "No previous conversation",
         question=question,
         attachments=attachments_info,
+        mcp_servers=mcp_servers_info,
     )
 
     logger.info(f"[TRIAGE] Evaluating question complexity: {question[:100]}...")

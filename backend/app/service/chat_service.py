@@ -20,6 +20,7 @@ from app.agent.factory import (
     chief_of_medicine_agent,
     clinical_pharmacologist_agent,
     clinical_researcher_agent,
+    mcp_agent,
     medical_scribe_agent,
     radiologist_agent,
     task_summary_agent,
@@ -511,7 +512,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                             "[NEW-QUESTION] Workforce still running — "
                             "preempting in-flight tasks"
                         )
-                        await workforce.preempt_and_redirect()
+                        await workforce.preempt_and_redirect(options)
                         # Drain stale events (e.g. ActionEndData that might
                         # have been queued before the preemption flag was set)
                         while not task_lock.queue.empty():
@@ -526,7 +527,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     else:
                         # Prepare workforce for the new task (reset memory,
                         # clear bookkeeping, keep workers alive)
-                        workforce.prepare_for_new_task()
+                        await workforce.prepare_for_new_task(options)
                         logger.info(
                             "[NEW-QUESTION] Workforce reset "
                             "for reuse via prepare_for_new_task()"
@@ -544,7 +545,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                             "[NEW-QUESTION] CACHED workforce still running — "
                             "preempting in-flight tasks"
                         )
-                        await workforce.preempt_and_redirect()
+                        await workforce.preempt_and_redirect(options)
                         # Drain stale events
                         while not task_lock.queue.empty():
                             try:
@@ -552,7 +553,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                             except asyncio.QueueEmpty:
                                 break
                     else:
-                        workforce.prepare_for_new_task()
+                        await workforce.prepare_for_new_task(options)
                     # Update toolkit working directories to current task folder
                     workforce.update_working_directory(working_directory)
                     logger.info(
@@ -567,6 +568,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     # Pass suggested_agents for dynamic agent creation
                     # If None (routing disabled) or empty, all agents are created
                     workforce = await construct_workforce(options, suggested_agents)
+
                 task_lock.status = Status.confirmed
 
                 # Create camel_task for the question
@@ -1643,6 +1645,36 @@ the current date.
         logger.debug(f"[WORKFORCE] Added {agent_name} to workforce")
 
     logger.info(f"[WORKFORCE] Workforce created with {len(specialist_agents)} specialist agents")
+
+    # Add MCP sidecar agent if MCP servers are configured.
+    # If the connection fails, let the exception propagate — the caller
+    # (step_solve) will emit an SSE error and stop the session so the
+    # user can fix or remove the broken MCP server config.
+    mcp_servers = options.installed_mcp.get("mcpServers", {})
+    if mcp_servers:
+        server_names = list(mcp_servers.keys())
+        logger.info(f"[WORKFORCE] Connecting to MCP servers: {server_names}")
+        try:
+            mcp_sidecar = await mcp_agent(options)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to connect to MCP server(s) "
+                f"{', '.join(server_names)}: {e}\n\n"
+                f"Please remove or fix the MCP server configuration and try again."
+            ) from e
+        workforce.add_single_agent_worker(
+            f"MCP Agent: Executes external tool calls via "
+            f"{', '.join(server_names)} MCP servers. "
+            f"Delegate tasks that require these external tools to this agent.",
+            mcp_sidecar,
+        )
+        # Store MCP config hash for tracking changes on workforce reuse
+        import hashlib
+        import json
+        config_str = json.dumps(mcp_servers, sort_keys=True)
+        workforce._mcp_config_hash = hashlib.md5(config_str.encode()).hexdigest()
+        logger.info(f"[WORKFORCE] Added MCP agent with servers: {server_names}")
+
     return workforce
 
 
@@ -1815,6 +1847,7 @@ async def perform_triage(
             question=question,
             attachments=attachments if attachments else None,
             conversation_context=conversation_context,
+            installed_mcp=options.installed_mcp,
         )
 
         logger.info(
