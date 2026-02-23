@@ -1,9 +1,16 @@
-import { cn } from '@/lib/utils';
 import { useChatStore } from '@/stores/chatStore';
-import { Brain, FileSearch, Globe, LayoutDashboard, Stethoscope } from 'lucide-react';
-import React, { useCallback, useEffect, useRef } from 'react';
+import {
+  Brain,
+  FileSearch,
+  Globe,
+  LayoutDashboard,
+  Stethoscope,
+} from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { DisclaimerModal } from './DisclaimerModal';
 import { MessageBubble } from './MessageBubble';
 import { ThinkingIndicator } from './ThinkingIndicator';
+import { cn } from '@/lib/utils';
 
 export const ConversationPanel: React.FC = () => {
   const messages = useChatStore((s) => s.messages);
@@ -14,8 +21,29 @@ export const ConversationPanel: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isUserScrolledUp = useRef(false);
 
-  const showThinking = (isStreaming || isLoading) && messages.length > 0 && !waitingForHumanReply;
+  const showThinking =
+    (isStreaming || isLoading) && messages.length > 0 && !waitingForHumanReply;
   const isEmpty = messages.length === 0 && !isLoading;
+
+  // Check if disclaimer was already acknowledged
+  const [showDisclaimer, setShowDisclaimer] = useState(() => {
+    const acknowledged = sessionStorage.getItem('disclaimerAcknowledged');
+    return !acknowledged;
+  });
+
+  useEffect(() => {
+    // Only show disclaimer if not acknowledged in sessionStorage
+    // sessionStorage persists across tab navigation but clears on hard refresh
+    const acknowledged = sessionStorage.getItem('disclaimerAcknowledged');
+    if (!acknowledged) {
+      setShowDisclaimer(true);
+    }
+  }, []);
+
+  const handleDisclaimerAcknowledge = () => {
+    sessionStorage.setItem('disclaimerAcknowledged', 'true');
+    setShowDisclaimer(false);
+  };
 
   // Track if user has scrolled up (to avoid fighting their scroll position)
   const handleScroll = useCallback(() => {
@@ -46,36 +74,65 @@ export const ConversationPanel: React.FC = () => {
   }, []);
 
   return (
-    <div
-      ref={scrollContainerRef}
-      onScroll={handleScroll}
-      className="flex-1 overflow-y-auto custom-scrollbar bg-background"
-    >
-      <div className="max-w-3xl mx-auto px-6 py-6">
-        {isEmpty ? (
-          <EmptyState />
-        ) : (
-          <div className="space-y-0">
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
-            ))}
+    <>
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto custom-scrollbar bg-background"
+      >
+        <div className="max-w-3xl mx-auto px-6 py-6">
+          {isEmpty ? (
+            <EmptyState />
+          ) : (
+            <div className="space-y-0">
+              {messages.map((msg) => (
+                <MessageBubble key={msg.id} message={msg} />
+              ))}
 
-            {showThinking && <ThinkingIndicator />}
+              {showThinking && <ThinkingIndicator />}
 
-            <div ref={messagesEndRef} className="h-1" />
-          </div>
-        )}
+              <div ref={messagesEndRef} className="h-1" />
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* Disclaimer Modal */}
+      <DisclaimerModal
+        open={showDisclaimer}
+        onOpenChange={setShowDisclaimer}
+        onAcknowledge={handleDisclaimerAcknowledge}
+      />
+    </>
   );
 };
 
 const EmptyState: React.FC = () => {
   const suggestions = [
-    { icon: Stethoscope, text: 'Analyze medical imaging', prompt: "Please analyze this medical image. Identify any notable findings, potential abnormalities, and provide a detailed assessment based on the visual information available." },
-    { icon: FileSearch, text: 'Search clinical literature', prompt: "Search for recent clinical literature and research papers on the latest evidence-based practices in diagnosis and treatment. Provide summaries of key findings and their clinical implications." },
-    { icon: Brain, text: 'Draft clinical reports', prompt: "Help me draft a comprehensive clinical report. Include sections for patient history, examination findings, assessment, and recommendations in a structured medical format." },
-    { icon: Globe, text: 'Find treatment guidelines', prompt: "Find and summarize current clinical practice guidelines and treatment protocols. Include recommended approaches, dosing considerations, and any relevant updates from major medical organizations." },
+    {
+      icon: Stethoscope,
+      text: 'Analyze medical imaging',
+      prompt:
+        'Please analyze this medical image. Identify any notable findings, potential abnormalities, and provide a detailed assessment based on the visual information available.',
+    },
+    {
+      icon: FileSearch,
+      text: 'Search clinical literature',
+      prompt:
+        'Search for recent clinical literature and research papers on the latest evidence-based practices in diagnosis and treatment. Provide summaries of key findings and their clinical implications.',
+    },
+    {
+      icon: Brain,
+      text: 'Draft clinical reports',
+      prompt:
+        'Help me draft a comprehensive clinical report. Include sections for patient history, examination findings, assessment, and recommendations in a structured medical format.',
+    },
+    {
+      icon: Globe,
+      text: 'Find treatment guidelines',
+      prompt:
+        'Find and summarize current clinical practice guidelines and treatment protocols. Include recommended approaches, dosing considerations, and any relevant updates from major medical organizations.',
+    },
   ];
 
   return (
@@ -92,8 +149,8 @@ const EmptyState: React.FC = () => {
 
       {/* Subtitle */}
       <p className="text-sm text-foreground-muted max-w-md leading-relaxed">
-        Your AI-powered multi-agent medical assistant. Ask a question, request a task,
-        or upload an image to get started.
+        Your AI-powered multi-agent medical assistant. Ask a question, request a
+        task, or upload an image to get started.
       </p>
 
       {/* Warning badge */}
@@ -104,22 +161,24 @@ const EmptyState: React.FC = () => {
       {/* Suggestion chips */}
       <div className="mt-8 flex flex-wrap justify-center gap-2 max-w-lg">
         {suggestions.slice(0, 2).map((suggestion) => (
-            <button
-              key={suggestion.text}
-              onClick={() => useChatStore.getState().setPendingInput(suggestion.prompt)}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2.5 rounded-xl",
-                "bg-card border border-card-border",
-                "text-sm text-foreground-secondary",
-                "hover:border-accent hover:text-accent hover:bg-accent-light/50",
-                "transition-all duration-200 cursor-pointer"
-              )}
-            >
-              <suggestion.icon className="w-4 h-4" />
-              {suggestion.text}
-            </button>
-          ))}
-        </div>
+          <button
+            key={suggestion.text}
+            onClick={() =>
+              useChatStore.getState().setPendingInput(suggestion.prompt)
+            }
+            className={cn(
+              'flex items-center gap-2 px-4 py-2.5 rounded-xl',
+              'bg-card border border-card-border',
+              'text-sm text-foreground-secondary',
+              'hover:border-accent hover:text-accent hover:bg-accent-light/50',
+              'transition-all duration-200 cursor-pointer',
+            )}
+          >
+            <suggestion.icon className="w-4 h-4" />
+            {suggestion.text}
+          </button>
+        ))}
+      </div>
     </div>
   );
 };

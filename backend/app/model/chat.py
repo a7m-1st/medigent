@@ -9,6 +9,7 @@ from camel.types import ModelType, RoleType
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.model.enums import DEFAULT_SUMMARY_PROMPT, Status  # noqa: F401
+from app.utils.encryption_utils import decrypt, is_encrypted
 
 logger = logging.getLogger("chat_model")
 
@@ -34,10 +35,11 @@ McpServers = dict[Literal["mcpServers"], dict[str, dict]]
 
 class AgentConfig(BaseModel):
     """Configuration for a specific agent type (e.g., Gemini 3 or MedGemma 4B).
-    
+
     Used for primary_agent (Gemini 3 agents) and secondary_agent (MedGemma 4B agents).
     Falls back to Chat global config if not provided.
     """
+
     api_url: str | None = None
     model_type: str | None = None
     model_platform: str | None = None
@@ -47,7 +49,7 @@ class AgentConfig(BaseModel):
     # Used as token_limit for CAMEL's auto-compaction (context summarization).
     # If None, CAMEL uses the model backend's default token limit.
     model_context_size: int | None = None
-    
+
     def get_effective_config(self, fallback: "AgentConfig") -> "AgentConfig":
         """Returns a new AgentConfig with fallbacks applied."""
         return AgentConfig(
@@ -55,18 +57,23 @@ class AgentConfig(BaseModel):
             model_type=self.model_type or fallback.model_type,
             model_platform=self.model_platform or fallback.model_platform,
             api_key=self.api_key or fallback.api_key,
-            use_simulated_tool_calling=self.use_simulated_tool_calling or fallback.use_simulated_tool_calling,
-            model_context_size=self.model_context_size or fallback.model_context_size,
+            use_simulated_tool_calling=self.use_simulated_tool_calling
+            or fallback.use_simulated_tool_calling,
+            model_context_size=self.model_context_size
+            or fallback.model_context_size,
         )
-    
+
     def has_custom_config(self) -> bool:
         """Check if any custom configuration values are set."""
-        return any([
-            self.api_url,
-            self.model_type,
-            self.model_platform,
-            self.api_key,
-        ])
+        return any(
+            [
+                self.api_url,
+                self.model_type,
+                self.model_platform,
+                self.api_key,
+            ]
+        )
+
 
 class ChatMessage(BaseModel):
     id: str
@@ -107,28 +114,42 @@ class Chat(BaseModel):
         """Fill model config from environment variables when not
         provided by the frontend."""
         if isinstance(data, dict):
-            if not data.get("api_key"):
+            api_key = data.get("api_key")
+
+            # If api_key is provided by frontend, check if it needs decryption
+            if api_key:
+                if is_encrypted(api_key):
+                    data["api_key"] = decrypt(api_key).strip()
+            # Otherwise, fall back to environment variable
+            elif api_key is None:
                 data["api_key"] = os.getenv("GEMINI_API_KEY", "")
+
             if not data.get("model_platform"):
-                data["model_platform"] = os.getenv(
-                    "MODEL_PLATFORM", ""
-                )
+                data["model_platform"] = os.getenv("MODEL_PLATFORM", "")
             if not data.get("model_type"):
                 data["model_type"] = os.getenv("MODEL_TYPE", "")
             if not data.get("api_url"):
                 env_url = os.getenv("API_URL", "")
                 if env_url:
                     data["api_url"] = env_url
-            
+
             # Set default secondary_agent (MedGemma) configuration if not provided
             if not data.get("secondary_agent"):
                 medgemma_ctx = os.getenv("MEDGEMMA_CONTEXT_SIZE", "16384")
                 data["secondary_agent"] = {
-                    "api_url": os.getenv("MEDGEMMA_API_URL", "https://med.awelkaircodes.org/v1"),
-                    "model_platform": os.getenv("MEDGEMMA_MODEL_PLATFORM", "openai-compatible-model"),
-                    "model_type": os.getenv("MEDGEMMA_MODEL_TYPE", "medgemma-4b"),
+                    "api_url": os.getenv(
+                        "MEDGEMMA_API_URL", "https://med.awelkaircodes.org/v1"
+                    ),
+                    "model_platform": os.getenv(
+                        "MEDGEMMA_MODEL_PLATFORM", "openai-compatible-model"
+                    ),
+                    "model_type": os.getenv(
+                        "MEDGEMMA_MODEL_TYPE", "medgemma-4b"
+                    ),
                     "use_simulated_tool_calling": True,
-                    "model_context_size": int(medgemma_ctx) if medgemma_ctx else None,
+                    "model_context_size": int(medgemma_ctx)
+                    if medgemma_ctx
+                    else None,
                 }
         return data
 
@@ -142,8 +163,7 @@ class Chat(BaseModel):
         except KeyError:
             # Not a valid enum name, return as-is
             logger.debug(
-                f"model_type '{model_type}' is not a"
-                f" valid ModelType enum"
+                f"model_type '{model_type}' is not a valid ModelType enum"
             )
         return model_type
 

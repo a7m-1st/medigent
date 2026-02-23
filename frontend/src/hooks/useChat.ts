@@ -1,3 +1,4 @@
+import { encrypt } from '@/lib/encryption';
 import { WSConnection, getWSUrl } from '@/lib/ws';
 import {
   useAgentStatusStore,
@@ -27,9 +28,12 @@ import { useSSEHandler } from './useSSEHandler';
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 // Default model configuration from environment variables
-const DEFAULT_MODEL_PLATFORM = import.meta.env.VITE_DEFAULT_MODEL_PLATFORM || 'GEMINI';
-const DEFAULT_MODEL_TYPE = import.meta.env.VITE_DEFAULT_MODEL_TYPE || 'GEMINI_3_FLASH';
-const DEFAULT_MODEL_API_URL = import.meta.env.VITE_DEFAULT_MODEL_API_URL || null;
+const DEFAULT_MODEL_PLATFORM =
+  import.meta.env.VITE_DEFAULT_MODEL_PLATFORM || 'GEMINI';
+const DEFAULT_MODEL_TYPE =
+  import.meta.env.VITE_DEFAULT_MODEL_TYPE || 'GEMINI_3_FLASH';
+const DEFAULT_MODEL_API_URL =
+  import.meta.env.VITE_DEFAULT_MODEL_API_URL || null;
 
 export interface UseChatReturn {
   messages: ChatMessage[];
@@ -43,8 +47,17 @@ export interface UseChatReturn {
   startChat: (data: Chat) => Promise<void>;
   continueChat: (data: SupplementChat) => Promise<void>;
   stopChat: () => Promise<void>;
-  sendHumanReply: (taskId: string, content: string, attaches?: string[]) => Promise<void>;
-  sendMessage: (question: string, attaches?: string[], config?: Partial<Chat>, history?: ChatMessage[]) => Promise<void>;
+  sendHumanReply: (
+    taskId: string,
+    content: string,
+    attaches?: string[],
+  ) => Promise<void>;
+  sendMessage: (
+    question: string,
+    attaches?: string[],
+    config?: Partial<Chat>,
+    history?: ChatMessage[],
+  ) => Promise<void>;
   clearMessages: () => void;
   reset: () => void;
 }
@@ -70,7 +83,7 @@ export function useChat(): UseChatReturn {
 
   // Track if component is mounted to prevent cleanup during React StrictMode
   const mountedRef = useRef(true);
-  
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -171,7 +184,7 @@ export function useChat(): UseChatReturn {
           console.error('[useChat] safeParse threw an error:', parseError);
           throw parseError;
         }
-        
+
         if (!validated.success) {
           const errorMsg = `Validation error: ${validated.error.issues.map((e: { message: string }) => e.message).join(', ')}`;
           console.error('[useChat] Validation errors:', validated.error.issues);
@@ -185,7 +198,9 @@ export function useChat(): UseChatReturn {
         if (!options?.preserveMessages) {
           // Fresh session: preserve only the latest user message
           const freshMessages = useChatStore.getState().messages;
-          const lastUserMessage = [...freshMessages].reverse().find((m: ChatMessage) => m.role === 'user');
+          const lastUserMessage = [...freshMessages]
+            .reverse()
+            .find((m: ChatMessage) => m.role === 'user');
           store.clearMessages();
           if (lastUserMessage) {
             store.addMessage(lastUserMessage);
@@ -212,7 +227,8 @@ export function useChat(): UseChatReturn {
 
         console.log('[useChat] start_chat sent over WebSocket');
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to start chat';
+        const message =
+          error instanceof Error ? error.message : 'Failed to start chat';
         store.setError(message);
         store.setStreaming(false);
         store.setConnected(false);
@@ -220,7 +236,7 @@ export function useChat(): UseChatReturn {
         store.setLoading(false);
       }
     },
-    [store, ensureWS, agentStatusStore, taskDecompStore, resourceStore]
+    [store, ensureWS, agentStatusStore, taskDecompStore, resourceStore],
   );
 
   const continueChat = useCallback(
@@ -228,7 +244,9 @@ export function useChat(): UseChatReturn {
       try {
         const validated = SupplementChatSchema.safeParse(data);
         if (!validated.success) {
-          store.setError(`Validation error: ${validated.error.issues.map((e: { message: string }) => e.message).join(', ')}`);
+          store.setError(
+            `Validation error: ${validated.error.issues.map((e: { message: string }) => e.message).join(', ')}`,
+          );
           return;
         }
 
@@ -245,30 +263,37 @@ export function useChat(): UseChatReturn {
         const ws = await ensureWS();
         ws.send('improve', validated.data);
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to continue chat';
+        const message =
+          error instanceof Error ? error.message : 'Failed to continue chat';
         store.setError(message);
       } finally {
         store.setLoading(false);
       }
     },
-    [store, ensureWS]
+    [store, ensureWS],
   );
 
   const sendMessage = useCallback(
-    async (question: string, attaches?: string[], config?: Partial<Chat>, history?: ChatMessage[]) => {
+    async (
+      question: string,
+      attaches?: string[],
+      config?: Partial<Chat>,
+      history?: ChatMessage[],
+    ) => {
       // Reset wasStopped flag at the start of a new send operation
       store.setWasStopped(false);
-      
+
       const projectId = store.currentProjectId;
-      
+
       console.log('[useChat] sendMessage called:', {
         projectId,
         hasExistingWS: !!wsRef.current,
         wsState: wsRef.current?.getState(),
       });
-      
+
       // Merge provided config with defaults
-      const { medgemmaHostUrl, medgemmaModelType, medgemmaContextSize } = useApiConfigStore.getState();
+      const { medgemmaHostUrl, medgemmaModelType, medgemmaContextSize } =
+        useApiConfigStore.getState();
       const secondaryAgent = medgemmaHostUrl
         ? {
             api_url: medgemmaHostUrl,
@@ -295,15 +320,15 @@ export function useChat(): UseChatReturn {
       // Set initial title from first user message
       const existingProject = projectStore.getProjectById(newProjectId);
       if (existingProject && existingProject.title === 'New Project') {
-        const initialTitle = question.length > 60
-          ? question.slice(0, 57) + '...'
-          : question;
+        const initialTitle =
+          question.length > 60 ? question.slice(0, 57) + '...' : question;
         projectStore.updateProject(newProjectId, { title: initialTitle });
       }
 
       // Persist the user message to projectStore BEFORE WS starts
-      const latestUserMsg = useChatStore.getState().messages
-        .filter((m: ChatMessage) => m.role === 'user')
+      const latestUserMsg = useChatStore
+        .getState()
+        .messages.filter((m: ChatMessage) => m.role === 'user')
         .pop();
       if (latestUserMsg) {
         projectStore.addMessageToProject(newProjectId, latestUserMsg);
@@ -316,7 +341,8 @@ export function useChat(): UseChatReturn {
         attaches: attaches || [],
         model_platform: config?.model_platform || DEFAULT_MODEL_PLATFORM,
         model_type: config?.model_type || DEFAULT_MODEL_TYPE,
-        api_key: config?.api_key || '',
+        // api_key: config?.api_key || '',
+        api_key: await encrypt(config?.api_key || ''),
         api_url: config?.api_url ?? DEFAULT_MODEL_API_URL,
         max_retries: config?.max_retries || 5,
         installed_mcp: config?.installed_mcp || { mcpServers: {} },
@@ -327,7 +353,7 @@ export function useChat(): UseChatReturn {
       };
       await startChat(chatData, { preserveMessages: isFollowUp });
     },
-    [store, startChat]
+    [store, startChat],
   );
 
   const stopChat = useCallback(async () => {
@@ -339,13 +365,18 @@ export function useChat(): UseChatReturn {
 
       // Cancel all pending/running tasks in the task tree
       taskDecompStore.cancelPendingTasks();
-      
+
       // Mark all working agents as completed (session stopped by user)
       const agents = agentStatusStore.agents;
       for (const name of Object.keys(agents)) {
         const agent = agents[name];
         if (agent && agent.state === 'working') {
-          agentStatusStore.setAgentCompleted(name, agent.knownIds[0] || '', 'Stopped by user', 0);
+          agentStatusStore.setAgentCompleted(
+            name,
+            agent.knownIds[0] || '',
+            'Stopped by user',
+            0,
+          );
         }
       }
 
@@ -356,7 +387,8 @@ export function useChat(): UseChatReturn {
         // Fallback: use REST endpoint
         const taskId = store.currentTaskId;
         if (taskId) {
-          const { stopChat: restStopChat } = await import('@/services/chatService');
+          const { stopChat: restStopChat } =
+            await import('@/services/chatService');
           await restStopChat(taskId);
         }
       }
@@ -364,7 +396,8 @@ export function useChat(): UseChatReturn {
       // Disconnect the WebSocket after stopping
       cleanupWS();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to stop chat';
+      const message =
+        error instanceof Error ? error.message : 'Failed to stop chat';
       store.setError(message);
     } finally {
       store.setLoading(false);
@@ -388,7 +421,9 @@ export function useChat(): UseChatReturn {
 
         const validated = HumanReplySchema.safeParse(data);
         if (!validated.success) {
-          store.setError(`Validation error: ${validated.error.issues.map((e: { message: string }) => e.message).join(', ')}`);
+          store.setError(
+            `Validation error: ${validated.error.issues.map((e: { message: string }) => e.message).join(', ')}`,
+          );
           return;
         }
 
@@ -399,17 +434,19 @@ export function useChat(): UseChatReturn {
         if (wsRef.current && wsRef.current.getState().isConnected) {
           wsRef.current.send('human_reply', validated.data);
         } else {
-          const { sendHumanReply: restSendHumanReply } = await import('@/services/chatService');
+          const { sendHumanReply: restSendHumanReply } =
+            await import('@/services/chatService');
           await restSendHumanReply(projectId, validated.data);
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to send reply';
+        const message =
+          error instanceof Error ? error.message : 'Failed to send reply';
         store.setError(message);
       } finally {
         store.setLoading(false);
       }
     },
-    [store]
+    [store],
   );
 
   const clearMessages = useCallback(() => {

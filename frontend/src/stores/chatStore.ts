@@ -20,6 +20,7 @@ interface ChatState {
   currentAskAgent: string | null
   currentAskAgentDisplayName: string | null
   pendingInput: string | null
+  streamingStartTime: number | null
 
   // Actions
   addMessage: (message: ChatMessage) => void
@@ -55,6 +56,7 @@ const initialState = {
   currentAskAgent: null as string | null,
   currentAskAgentDisplayName: null as string | null,
   pendingInput: null as string | null,
+  streamingStartTime: null as number | null,
 }
 
 export const useChatStore = create<ChatState>()(
@@ -86,7 +88,12 @@ export const useChatStore = create<ChatState>()(
 
     setStreaming: (isStreaming) =>
       set((state) => {
+        console.log('[chatStore] setStreaming:', isStreaming);
         state.isStreaming = isStreaming
+        if (isStreaming && !state.streamingStartTime) {
+          state.streamingStartTime = Date.now()
+          console.log('[chatStore] streamingStartTime set to:', state.streamingStartTime);
+        }
         if (!isStreaming) {
           state.streamingContent = ''
         }

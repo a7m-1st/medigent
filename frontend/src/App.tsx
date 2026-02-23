@@ -16,7 +16,17 @@ function App() {
         <Route path="/thank-you" element={<ThankYouPage />} />
         <Route path="/menu" element={<MobileMenuPage />} />
       </Routes>
-      <Toaster />
+      <Toaster 
+        position="top-center"
+        richColors
+        toastOptions={{
+          style: {
+            background: '#ffb7b7',
+            color: '#d02f24',
+            border: 'none'
+          },
+        }}
+      />
     </Router>
   );
 }

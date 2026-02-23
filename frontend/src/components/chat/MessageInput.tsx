@@ -39,6 +39,7 @@ export function MessageInput() {
       installed_mcp: {},
       summary_prompt: '',
       use_simulated_tool_calling: false,
+      history: [],
     });
   };
 

@@ -313,12 +313,26 @@ export function useSSEHandler(options: SSEHandlerOptions = {}) {
 
     // If task failed, check if we can identify the agent and update its state
     if (normalizedState === 'failed' && data.result) {
-      // Try to find which agent was working on this task
+      // Stop streaming when task permanently fails
+      chatStore.setStreaming(false);
+      chatStore.setLoading(false);
+
+      // Add error message to chat as system message
+      const errorMessage = data.result.slice(0, 200);
+      chatStore.addMessage({
+        id: `error-${Date.now()}`,
+        role: 'system',
+        content: `Task failed: \n${errorMessage}. \n\nPlease open the Agents Activity panel to view detailed logs.`,
+        timestamp: new Date().toISOString(),
+        metadata: { isError: true },
+      });
+
+      // Try to find which agent was working on this task and update its state
       const currentAgents = useAgentStatusStore.getState().agents;
       for (const agentName of MAIN_AGENT_NAMES) {
         const agent = currentAgents[agentName];
         if (agent && agent.currentTaskId === data.task_id) {
-          useAgentStatusStore.getState().setAgentError(agentName, data.result.slice(0, 200));
+          useAgentStatusStore.getState().setAgentError(agentName, errorMessage);
           break;
         }
       }
@@ -414,14 +428,24 @@ export function useSSEHandler(options: SSEHandlerOptions = {}) {
     
     taskStore.setFinalSummary(data);
 
+    // Calculate duration
+    const startTime = useChatStore.getState().streamingStartTime;
+    console.log('[handleEnd] streamingStartTime:', startTime, 'Date.now():', Date.now());
+    const duration = startTime ? Date.now() - startTime : null;
+    console.log('[handleEnd] duration:', duration);
+
     addMessageAndPersist({
       id: `end-${Date.now()}`,
       role: 'assistant',
       content: data,
       timestamp: new Date().toISOString(),
+      metadata: duration ? { duration } : undefined,
     });
 
+    // Clear streaming state
     chatStore.setStreaming(false);
+    // Also clear the start time manually
+    useChatStore.getState().streamingStartTime = null;
 
     // Mark all remaining running/waiting tasks as done
     taskStore.completeRemainingTasks();

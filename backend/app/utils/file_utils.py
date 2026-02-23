@@ -12,6 +12,8 @@ from app.model.chat import Chat
 
 logger = logging.getLogger("file_utils")
 
+MAX_FILE_SIZE = 2 * 1024 * 1024  # 2MB limit
+
 
 def get_working_directory(options: Chat, task_lock=None) -> str:
     """
@@ -131,6 +133,18 @@ def process_attaches(
     processed = []
     for i, attach in enumerate(attaches):
         if is_base64_file(attach):
+            # Check file size before processing
+            try:
+                header, b64data = attach.split(",", 1)
+                decoded = base64.b64decode(b64data)
+                if len(decoded) > MAX_FILE_SIZE:
+                    logger.warning(
+                        f"Skipping file_{i + 1}: exceeds {MAX_FILE_SIZE} bytes limit"
+                    )
+                    continue
+            except Exception as e:
+                logger.warning(f"Could not check file size: {e}")
+
             try:
                 file_path = save_base64_file(
                     attach,
