@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import logging
+import os
 import platform
 from pathlib import Path
 from typing import Any
@@ -31,8 +32,10 @@ from app.agent.tools import get_mcp_tools, get_toolkits
 from app.model.chat import Chat, NewAgent, Status, sse_json
 from app.service.task import (
     Action,
+    ActionCreateAgentData,
     ActionDecomposeProgressData,
     ActionDecomposeTextData,
+    ActionEndData,
     ActionErrorData,
     ActionImproveData,
     Agents,
@@ -54,6 +57,88 @@ MAX_CONVERSATION_CONTEXT_LENGTH = 100000
 
 # Feature flag: Enable dynamic task routing based on complexity
 ENABLE_DYNAMIC_ROUTING = True
+
+
+def _extract_agent_tool_names(agent: Any) -> list[str]:
+    """Extract registered tool names from a ListenChatAgent-like object."""
+    internal_tools = getattr(agent, "_internal_tools", None)
+    if isinstance(internal_tools, dict):
+        return [str(name) for name in internal_tools.keys()]
+    return []
+
+
+MAIN_WORKFORCE_AGENT_NAMES = {
+    Agents.chief_of_medicine.value,
+    Agents.clinical_researcher.value,
+    Agents.medical_scribe.value,
+    Agents.radiologist.value,
+    Agents.attending_physician.value,
+    Agents.clinical_pharmacologist.value,
+}
+
+
+def _normalize_agent_name(raw_name: Any) -> str:
+    if isinstance(raw_name, Agents):
+        return raw_name.value
+
+    normalized = str(raw_name or "").strip()
+    if normalized.startswith("Agents."):
+        return normalized.split(".", 1)[1]
+    return normalized
+
+
+async def _replay_cached_agent_create_events(
+    task_lock: TaskLock,
+    workforce: Workforce,
+) -> None:
+    """Replay create_agent SSE actions for agents in a cached workforce.
+
+    When a workforce is reused from cache, agent_model() is not called again,
+    so no new Action.create_agent events are enqueued. Frontend sessions that
+    reconnect need these events to rebuild their local agent map.
+    """
+    seen_agent_ids: set[str] = set()
+    replay_candidates: list[Any] = []
+
+    for attr in ("coordinator_agent", "task_agent", "new_worker_agent"):
+        agent = getattr(workforce, attr, None)
+        if agent is not None:
+            replay_candidates.append(agent)
+
+    for child in getattr(workforce, "_children", []):
+        worker = getattr(child, "worker", None)
+        if worker is not None:
+            replay_candidates.append(worker)
+
+    replay_count = 0
+    for agent in replay_candidates:
+        agent_id = getattr(agent, "agent_id", None)
+        if not agent_id or agent_id in seen_agent_ids:
+            continue
+
+        normalized_name = _normalize_agent_name(
+            getattr(agent, "agent_name", None)
+        )
+        if normalized_name not in MAIN_WORKFORCE_AGENT_NAMES:
+            continue
+
+        seen_agent_ids.add(agent_id)
+
+        await task_lock.put_queue(
+            ActionCreateAgentData(
+                data={
+                    "agent_name": normalized_name,
+                    "agent_id": str(agent_id),
+                    "tools": _extract_agent_tool_names(agent),
+                }
+            )
+        )
+        replay_count += 1
+
+    logger.info(
+        f"[WORKFORCE] Replayed {replay_count} cached create_agent events",
+        extra={"project_id": task_lock.id},
+    )
 
 
 async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
@@ -90,6 +175,9 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
     loop_iteration = 0
     event_loop = asyncio.get_running_loop()
     sub_tasks: list[Task] = []
+    cached_agents_replayed = False
+    latest_task_state = "unknown"
+    latest_task_result = ""
 
     # Session timeout: 1 hour (3600 seconds)
     SESSION_TIMEOUT_SECONDS = 3600
@@ -138,31 +226,40 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
             logger.warning("=" * 80)
             if workforce is not None:
                 logger.info(
-                    "[LIFECYCLE] Stopping workforce "
-                    "due to client disconnect, "
+                    "[LIFECYCLE] Caching workforce "
+                    "in task_lock before disconnect, "
                     "workforce._running="
                     f"{workforce._running}"
                 )
                 if workforce._running:
                     workforce.stop()
                 workforce.stop_gracefully()
+                # Feature 3: Cache workforce for reuse instead of destroying
+                task_lock.workforce = workforce
+                workforce = None
                 logger.info(
-                    "[LIFECYCLE] Workforce stopped after client disconnect"
+                    "[LIFECYCLE] Workforce cached in task_lock "
+                    "after client disconnect"
                 )
             else:
                 logger.info("[LIFECYCLE] Workforce is None, no need to stop")
             task_lock.status = Status.done
-            try:
-                await delete_task_lock(task_lock.id)
-                logger.info(
-                    "[LIFECYCLE] Task lock deleted after client disconnect"
-                )
-            except Exception as e:
-                logger.error(f"Error deleting task lock on disconnect: {e}")
+            # Feature 3: DON'T delete task_lock on disconnect — keep it
+            # alive so the next POST /chat for the same project can
+            # reuse the cached workforce.  Stale task_locks are cleaned
+            # up by the periodic cleanup task.
+            # Drain any stale items from the queue (e.g. ActionEndData
+            # queued by workforce.stop()) so the next step_solve doesn't
+            # pick them up.
+            while not task_lock.queue.empty():
+                try:
+                    task_lock.queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
             logger.info(
                 "[LIFECYCLE] Breaking out of "
                 "step_solve loop due to "
-                "client disconnect"
+                "client disconnect (task_lock preserved)"
             )
             break
         try:
@@ -234,11 +331,24 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 else:
                     assert isinstance(item, ActionImproveData)
                     question = item.data.question
-                    attaches_raw = (
-                        item.data.attaches
-                        if item.data.attaches
-                        else options.attaches
-                    )
+                    item_attaches = item.data.attaches
+                    if item_attaches:
+                        attaches_raw = item_attaches
+                        logger.info(
+                            "[NEW-QUESTION] Using attaches "
+                            "from ActionImproveData: "
+                            f"{[Path(p).name if '/' in p or chr(92) in p else p[:30] for p in item_attaches]}"
+                        )
+                    else:
+                        attaches_raw = options.attaches
+                        logger.warning(
+                            "[NEW-QUESTION] FALLBACK: "
+                            "item.data.attaches is empty, "
+                            "using options.attaches "
+                            "(original turn). This may use "
+                            "STALE attachment data! "
+                            f"attaches={[Path(p).name if '/' in p or chr(92) in p else p[:30] for p in (options.attaches or [])]}"
+                        )
                     logger.info(
                         "[NEW-QUESTION] Follow-up "
                         "question from "
@@ -246,8 +356,39 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         f"'{question[:100]}...'"
                     )
 
+                incoming_task_id = getattr(item, "new_task_id", None)
+                active_task_id = (
+                    incoming_task_id
+                    or getattr(task_lock, "current_task_id", None)
+                    or options.task_id
+                )
+
+                if incoming_task_id:
+                    set_current_task_id(options.project_id, incoming_task_id)
+                    task_lock.summary_generated = False
+
+                if active_task_id and options.task_id != active_task_id:
+                    options.task_id = active_task_id
+                    os.environ["file_save_path"] = options.file_save_path()
+                    camel_log = (
+                        Path.home()
+                        / ".medgemma"
+                        / ("project_" + options.project_id)
+                        / ("task_" + options.task_id)
+                        / "camel_logs"
+                    )
+                    camel_log.mkdir(parents=True, exist_ok=True)
+                    os.environ["CAMEL_LOG_DIR"] = str(camel_log)
+                    logger.info(
+                        "[NEW-QUESTION] Updated runtime task context",
+                        extra={
+                            "project_id": options.project_id,
+                            "task_id": options.task_id,
+                        },
+                    )
+
                 # Process attachments: convert base64 images to file paths
-                working_directory = get_working_directory(options)
+                working_directory = get_working_directory(options, task_lock)
                 attaches_to_use = process_attaches(
                     attaches_raw, working_directory
                 ) if attaches_raw else []
@@ -285,12 +426,21 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     "[NEW-QUESTION] Processing task "
                     "via workforce flow"
                 )
-                # Update the sync_step with new task_id
-                if hasattr(item, "new_task_id") and item.new_task_id:
-                    set_current_task_id(options.project_id, item.new_task_id)
-                    task_lock.summary_generated = False
-
                 yield sse_json("confirmed", {"question": question})
+
+                # If this session is reusing a cached workforce from a prior
+                # connection, replay create_agent events so the frontend can
+                # rebuild its agent registry before further lifecycle events.
+                if (
+                    not cached_agents_replayed
+                    and workforce is None
+                    and task_lock.workforce is not None
+                ):
+                    await _replay_cached_agent_create_events(
+                        task_lock,
+                        task_lock.workforce,
+                    )
+                    cached_agents_replayed = True
 
                 # ============================================================
                 # DYNAMIC ROUTING: Evaluate task complexity before processing
@@ -353,6 +503,63 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         "existing workforce "
                         f"(id={id(workforce)})"
                     )
+                    # Feature 5: If workforce is still running (user sent
+                    # a follow-up before the previous task finished),
+                    # preempt the in-flight work first.
+                    if workforce._running:
+                        logger.info(
+                            "[NEW-QUESTION] Workforce still running — "
+                            "preempting in-flight tasks"
+                        )
+                        await workforce.preempt_and_redirect()
+                        # Drain stale events (e.g. ActionEndData that might
+                        # have been queued before the preemption flag was set)
+                        while not task_lock.queue.empty():
+                            try:
+                                task_lock.queue.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
+                        logger.info(
+                            "[NEW-QUESTION] Workforce reset "
+                            "for reuse via preempt_and_redirect()"
+                        )
+                    else:
+                        # Prepare workforce for the new task (reset memory,
+                        # clear bookkeeping, keep workers alive)
+                        workforce.prepare_for_new_task()
+                        logger.info(
+                            "[NEW-QUESTION] Workforce reset "
+                            "for reuse via prepare_for_new_task()"
+                        )
+                    # Update toolkit working directories to current task folder
+                    workforce.update_working_directory(working_directory)
+                elif task_lock.workforce is not None:
+                    # Recover workforce cached in task_lock from
+                    # a prior Action.end (Feature 3: workforce reuse)
+                    workforce = task_lock.workforce
+                    task_lock.workforce = None
+                    # Feature 5: Preempt if still running
+                    if workforce._running:
+                        logger.info(
+                            "[NEW-QUESTION] CACHED workforce still running — "
+                            "preempting in-flight tasks"
+                        )
+                        await workforce.preempt_and_redirect()
+                        # Drain stale events
+                        while not task_lock.queue.empty():
+                            try:
+                                task_lock.queue.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
+                    else:
+                        workforce.prepare_for_new_task()
+                    # Update toolkit working directories to current task folder
+                    workforce.update_working_directory(working_directory)
+                    logger.info(
+                        "[NEW-QUESTION] Reusing CACHED "
+                        "workforce from task_lock "
+                        f"(id={id(workforce)})"
+                    )
                 else:
                     logger.info(
                         "[NEW-QUESTION] Creating NEW workforce instance"
@@ -364,14 +571,49 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
 
                 # Create camel_task for the question
                 clean_task_content = question + options.summary_prompt
+
+                # Embed attachment file paths directly into the task
+                # content so that worker agents (especially the
+                # radiologist) always have the exact path available,
+                # even if the coordinator's subtask description omits
+                # the filename.  This prevents stale-path issues
+                # on multi-turn where additional_info alone may not
+                # be parsed correctly by smaller models.
+                if attaches_to_use:
+                    attach_info = "\n".join(
+                        f"- {p.replace(chr(92), '/')}"
+                        for p in attaches_to_use
+                    )
+                    clean_task_content += (
+                        f"\n\nAttached files:\n{attach_info}"
+                    )
+
                 camel_task = Task(
                     content=clean_task_content, id=options.task_id
                 )
+                camel_task.failure_count = 0
+                # To support follow-up tasks referencing previously uploaded files,
+                # populate additional_info with all files in the working directory
+                task_files = {}
+                if Path(working_directory).exists():
+                    for f in Path(working_directory).iterdir():
+                        if f.is_file():
+                            task_files[f.name] = str(f.absolute()).replace("\\", "/")
+                
                 if len(attaches_to_use) > 0:
-                    camel_task.additional_info = {
-                        Path(file_path).name: file_path
-                        for file_path in attaches_to_use
-                    }
+                    for file_path in attaches_to_use:
+                        task_files[Path(file_path).name] = file_path.replace("\\", "/")
+                
+                if task_files:
+                    camel_task.additional_info = task_files
+
+                logger.info(
+                    "[CAMEL-TASK] Created camel_task: "
+                    f"id={camel_task.id} | "
+                    f"content_preview='{camel_task.content[:120]}' | "
+                    f"additional_info_keys="
+                    f"{list(camel_task.additional_info.keys()) if camel_task.additional_info else 'None'}"
+                )
 
                 # Stream decomposition in background
                 stream_state = {
@@ -435,9 +677,9 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         )
 
                 async def run_decomposition():
-                    nonlocal summary_task_content
+                    nonlocal summary_task_content, sub_tasks
                     try:
-                        sub_tasks = await asyncio.to_thread(
+                        decomposed = await asyncio.to_thread(
                             workforce.workforce_make_sub_tasks,
                             camel_task,
                             context_for_coordinator,
@@ -446,12 +688,16 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         )
 
                         if stream_state["subtasks"]:
-                            sub_tasks = stream_state["subtasks"]
+                            decomposed = stream_state["subtasks"]
+                        # Update the OUTER sub_tasks so that
+                        # Action.start uses the fresh subtasks
+                        # instead of stale ones from a prior turn.
+                        sub_tasks = decomposed
                         state_holder["sub_tasks"] = sub_tasks
                         logger.info(
                             "Task decomposed into "
                             f"{len(sub_tasks)} subtasks"
-                        )
+                            )
                         try:
                             task_lock.decompose_sub_tasks = sub_tasks
                         except Exception:
@@ -588,8 +834,8 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 task_lock.add_background_task(task)
             elif item.action == Action.task_state:
                 # Track completed task results for the end event
-                task_state = item.data.get("state", "unknown")
-                task_result = item.data.get("result", "")
+                latest_task_state = str(item.data.get("state", "unknown"))
+                latest_task_result = str(item.data.get("result", "") or "")
                 yield sse_json("task_state", item.data)
             elif item.action == Action.create_agent:
                 yield sse_json("create_agent", item.data)
@@ -630,7 +876,8 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     },
                 )
             elif item.action == Action.decompose_text:
-                yield sse_json("decompose_text", item.data)
+                # yield sse_json("decompose_text", item.data)
+                pass
             elif item.action == Action.decompose_progress:
                 yield sse_json("to_sub_tasks", item.data)
             elif item.action == Action.error:
@@ -723,25 +970,34 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     )
                     continue
 
-                if camel_task is None:
-                    logger.warning(
-                        "END action received but "
-                        "camel_task is None for "
-                        "project "
-                        f"{options.project_id}, "
-                        f"task {options.task_id}. "
-                        "This may indicate multiple "
-                        "END actions or improper "
-                        "task lifecycle management."
-                    )
-                    # Use item data as final result
-                    # if camel_task is None
-                    final_result: str = (
-                        str(item.data) if item.data else "Task completed"
-                    )
-                else:
+                if camel_task is not None:
                     get_result = get_task_result_with_optional_summary
                     final_result: str = await get_result(camel_task, options)
+                elif task_lock.last_task_result.strip():
+                    final_result: str = task_lock.last_task_result
+                elif item.data:
+                    final_result: str = str(item.data)
+                else:
+                    final_result: str = "Task completed"
+
+                if not str(final_result or "").strip():
+                    if latest_task_result.strip():
+                        final_result = _strip_subtask_prefix(
+                            latest_task_result
+                        )
+                    elif task_lock.last_task_result.strip():
+                        final_result = _strip_subtask_prefix(
+                            task_lock.last_task_result
+                        )
+                    elif latest_task_state.lower() == "failed":
+                        final_result = (
+                            "Task execution failed after maximum retries. "
+                            "No additional details were returned."
+                        )
+                    else:
+                        final_result = (
+                            "Task completed, but no result content was returned."
+                        )
 
                 task_lock.status = Status.done
 
@@ -770,52 +1026,38 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
 
                 yield sse_json("end", final_result)
 
+                # Feature 3: Cache workforce for reuse instead of destroying it.
+                # Keep the SSE loop alive so follow-up messages (via POST
+                # /chat/{id}) can be processed without a new SSE connection.
                 if workforce is not None:
                     logger.info(
-                        "[LIFECYCLE] Calling "
-                        "workforce.stop_gracefully()"
-                        " for project "
-                        f"{options.project_id}, "
+                        "[LIFECYCLE] Caching workforce "
+                        "in task_lock for reuse, "
                         f"workforce id={id(workforce)}"
                     )
+                    task_lock.workforce = workforce
+                    # Stop child listening tasks gracefully
+                    # (they'll be restarted on next task)
                     workforce.stop_gracefully()
-                    logger.info(
-                        "[LIFECYCLE] Workforce "
-                        "stopped gracefully for "
-                        "project "
-                        f"{options.project_id}"
-                    )
                     workforce = None
-                    logger.info("[LIFECYCLE] Workforce set to None")
-                else:
-                    logger.warning(
-                        "[LIFECYCLE] Workforce "
-                        "already None at end "
-                        "action for project "
-                        f"{options.project_id}"
+                    logger.info(
+                        "[LIFECYCLE] Workforce cached "
+                        "and local ref set to None"
                     )
 
                 camel_task = None
+                sub_tasks = []
+                task_lock.decompose_sub_tasks = []
                 logger.info("[LIFECYCLE] camel_task set to None")
 
-                # Close SSE connection after task ends
+                # DON'T break — keep SSE loop alive for follow-up messages.
+                # The loop will exit on Action.stop, client disconnect,
+                # or session timeout.
                 logger.info(
-                    "[LIFECYCLE] Breaking out of "
-                    "step_solve loop to close SSE "
-                    "connection after task end"
+                    "[LIFECYCLE] SSE loop kept alive "
+                    "for follow-up messages "
+                    f"(project {options.project_id})"
                 )
-                try:
-                    await delete_task_lock(task_lock.id)
-                    logger.info(
-                        "[LIFECYCLE] Task lock deleted "
-                        "after task end"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Error deleting task lock "
-                        f"on end: {e}"
-                    )
-                break
 
             elif item.action == Action.stop:
                 logger.info("=" * 80)
@@ -1028,6 +1270,19 @@ Summary:
     return summary
 
 
+def _strip_subtask_prefix(text: str) -> str:
+    """Strip the ``--- Subtask <id> Result ---`` header that the CAMEL
+    workforce prepends when assembling a parent task result from a single
+    subtask.  Returns the text unchanged when no such header is found."""
+    if text and "--- Subtask" in text and "Result ---" in text:
+        parts = text.split("Result ---", 1)
+        if len(parts) > 1:
+            stripped = parts[1].strip()
+            if stripped:
+                return stripped
+    return text
+
+
 async def get_task_result_with_optional_summary(
         task: Task, options: Chat
 ) -> str:
@@ -1043,10 +1298,16 @@ async def get_task_result_with_optional_summary(
     """
     result = str(task.result or "")
 
-    if task.subtasks and len(task.subtasks) > 1:
+    subtask_count = len(task.subtasks) if task.subtasks else 0
+    logger.debug(
+        f"[RESULT] task {task.id}: subtask_count={subtask_count}, "
+        f"result_len={len(result)}, has_prefix={'--- Subtask' in result}"
+    )
+
+    if subtask_count > 1:
         logger.info(
             f"Task {task.id} has "
-            f"{len(task.subtasks)} subtasks, "
+            f"{subtask_count} subtasks, "
             "generating summary"
         )
         try:
@@ -1058,12 +1319,17 @@ async def get_task_result_with_optional_summary(
             logger.info(f"Successfully generated summary for task {task.id}")
         except Exception as e:
             logger.error(f"Failed to generate summary for task {task.id}: {e}")
-    elif task.subtasks and len(task.subtasks) == 1:
-        logger.info(f"Task {task.id} has only 1 subtask, skipping LLM summary")
-        if result and "--- Subtask" in result and "Result ---" in result:
-            parts = result.split("Result ---", 1)
-            if len(parts) > 1:
-                result = parts[1].strip()
+    else:
+        # Single subtask (or subtask list not populated on cached-workforce
+        # follow-up turns) — strip the "--- Subtask ... Result ---" header
+        # that the CAMEL base class prepends.
+        if subtask_count == 0 and "--- Subtask" in result:
+            logger.warning(
+                f"[RESULT] task {task.id}: subtasks list is empty but "
+                f"result contains subtask prefix — this indicates a "
+                f"workforce-reuse bookkeeping gap"
+            )
+        result = _strip_subtask_prefix(result)
 
     return result
 
@@ -1161,9 +1427,10 @@ You are a helpful coordinator.
 {platform.machine()} at working directory \
 `{working_directory}`. All local file operations \
 must occur here, but you can access files from any \
-place in the file system. For all file system \
-operations, you MUST use absolute paths to ensure \
-precision and avoid ambiguity.
+place in the file system. When referring to files, \
+you MUST use ONLY the exact filename (e.g., 'image.png' \
+instead of '/full/path/image.png'). The system will \
+automatically resolve the correct absolute path for the tools.
 The current date is {datetime.date.today()}. \
 For any date-related tasks, you MUST use this as \
 the current date.
@@ -1183,9 +1450,10 @@ You are a helpful task planner.
 {platform.machine()} at working directory \
 `{working_directory}`. All local file operations \
 must occur here, but you can access files from any \
-place in the file system. For all file system \
-operations, you MUST use absolute paths to ensure \
-precision and avoid ambiguity.
+place in the file system. When referring to files, \
+you MUST use ONLY the exact filename (e.g., 'image.png' \
+instead of '/full/path/image.png'). The system will \
+automatically resolve the correct absolute path for the tools.
 The current date is {datetime.date.today()}. \
 For any date-related tasks, you MUST use this as \
 the current date.
@@ -1203,9 +1471,10 @@ the current date.
 {platform.machine()} at working directory \
 `{working_directory}`. All local file operations \
 must occur here, but you can access files from any \
-place in the file system. For all file system \
-operations, you MUST use absolute paths to ensure \
-precision and avoid ambiguity.
+place in the file system. When referring to files, \
+you MUST use ONLY the exact filename (e.g., 'image.png' \
+instead of '/full/path/image.png'). The system will \
+automatically resolve the correct absolute path for the tools.
 The current date is {datetime.date.today()}. \
 For any date-related tasks, you MUST use this as \
 the current date.

@@ -3,6 +3,7 @@
 import datetime
 import json
 import logging
+import re
 
 from camel.agents.chat_agent import AsyncStreamingChatAgentResponse
 from camel.societies.workforce.prompts import PROCESS_TASK_PROMPT
@@ -18,6 +19,64 @@ from colorama import Fore
 from app.agent.listen_chat_agent import ListenChatAgent
 
 logger = logging.getLogger("single_agent_worker")
+
+
+def _salvage_content(response_text: str) -> str | None:
+    """Try to extract meaningful content from a response that failed
+    TaskResult parsing.
+
+    The model may have produced useful output but formatted it as a raw
+    tool-call dict (e.g. ``create_note`` with a long ``content`` field),
+    plain Markdown, or malformed JSON.  This function attempts to recover
+    that content so the task doesn't fail unnecessarily.
+
+    Returns:
+        The extracted content string, or ``None`` if nothing useful found.
+    """
+    if not response_text or len(response_text.strip()) < 50:
+        return None
+
+    text = response_text.strip()
+
+    # 1. If the response is a tool_call for create_note / append_note,
+    #    extract the "content" argument value — that's the actual work output.
+    tc_match = re.search(
+        r'<tool_call>\s*\{.*?"name"\s*:\s*"(?:create_note|append_note)".*?\}\s*</tool_call>',
+        text,
+        re.DOTALL,
+    )
+    if tc_match:
+        # Try to pull the "content" field from the arguments
+        content_match = re.search(
+            r'"content"\s*:\s*"((?:[^"\\]|\\.)*)"',
+            tc_match.group(0),
+        )
+        if content_match and len(content_match.group(1)) > 30:
+            return content_match.group(1).replace('\\n', '\n').replace('\\"', '"')
+
+    # 2. Try to find a JSON object with a "content" field anywhere
+    content_match = re.search(
+        r'"content"\s*:\s*"((?:[^"\\]|\\.)*)"',
+        text,
+    )
+    if content_match and len(content_match.group(1)) > 30:
+        return content_match.group(1).replace('\\n', '\n').replace('\\"', '"')
+
+    # 3. Strip <tool_call> blocks and see if remaining text is substantial
+    cleaned = re.sub(
+        r'<tool_call>.*?</tool_call>',
+        '',
+        text,
+        flags=re.DOTALL,
+    ).strip()
+    if len(cleaned) > 100:
+        return cleaned
+
+    # 4. If overall response is substantial prose, return as-is
+    if len(text) > 200:
+        return text
+
+    return None
 
 
 def _build_simulated_tool_call_prompt(
@@ -84,8 +143,10 @@ RULES:
 1. Call ONE tool at a time. Your ENTIRE response must be ONLY the <tool_call> block.
 2. After receiving tool results, call the next tool OR return your final answer.
 3. You MUST call tools - do NOT skip them or make up results.
-4. When done with all tool calls, return a JSON object:
-   {{"content": "your complete result here", "failed": false}}
+4. When you are DONE with ALL tool calls, return ONLY a JSON object (no markdown, no extra text):
+   {{"content": "brief 2-3 sentence summary of what you did and found", "failed": false}}
+5. Your final JSON response should be a SHORT summary. Any detailed/structured content should be saved in notes via tool calls BEFORE returning the JSON.
+6. NEVER return a <tool_call> block and JSON in the same response. Pick ONE.
 
 ---
 TASK:
@@ -202,8 +263,21 @@ class SingleAgentWorker(BaseSingleAgentWorker):
         final_response = None
         try:
             dependency_tasks_info = self._get_dep_tasks_info(dependencies)
+            task_content = task.content
+            # The coordinator often writes relative filenames (e.g. "file_1.jpg" in the CWD)
+            # but the actual toolkits need the absolute path. If we have absolute paths mapped
+            # in additional_info, substitute them directly into the task content so the worker
+            # agent receives the absolute path.
+            if isinstance(task.additional_info, dict):
+                for k, v in task.additional_info.items():
+                    if isinstance(k, str) and isinstance(v, str) and k in task_content:
+                        # Use forward slashes to prevent JSON escaping issues when the LLM generates the tool call
+                        safe_v = v.replace("\\", "/")
+                        # Replace the filename with the absolute path
+                        task_content = task_content.replace(k, safe_v)
+            
             prompt = PROCESS_TASK_PROMPT.format(
-                content=task.content,
+                content=task_content,
                 parent_task_content=task.parent.content if task.parent else "",
                 dependency_tasks_info=dependency_tasks_info,
                 additional_info=task.additional_info,
@@ -271,6 +345,28 @@ class SingleAgentWorker(BaseSingleAgentWorker):
                         },
                     )
                 )
+
+                # If structured parsing fell back to "Task processing
+                # failed" but the response actually contains useful text
+                # (e.g. the model returned a tool call as its final
+                # response, or plain prose instead of JSON), salvage it.
+                if (
+                    getattr(task_result, "failed", False)
+                    and getattr(task_result, "content", "")
+                    == "Task processing failed"
+                    and response_content
+                    and len(response_content.strip()) > 50
+                ):
+                    salvaged = _salvage_content(response_content)
+                    if salvaged:
+                        logger.info(
+                            f"Salvaged content (len={len(salvaged)}) "
+                            f"from unparseable response for task {task.id}"
+                        )
+                        task_result = TaskResult(
+                            content=salvaged,
+                            failed=False,
+                        )
             else:
                 # Use native structured output if supported
                 response = await worker_agent.astep(

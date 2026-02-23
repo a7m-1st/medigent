@@ -185,6 +185,7 @@ class Chat(BaseModel):
 class SupplementChat(BaseModel):
     question: str
     task_id: str | None = None
+    project_id: str | None = None
     attaches: list[str] = []
 
 

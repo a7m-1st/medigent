@@ -13,6 +13,7 @@ from app.controller import (
     chat_controller,
     health_controller,
     model_controller,
+    session_controller,
     task_controller
 )
 
@@ -42,6 +43,11 @@ def register_routers(app: FastAPI, prefix: str = "") -> None:
             "router": chat_controller.router,
             "tags": ["chat"],
             "description": "Chat session management, improvements, and human interactions",
+        },
+        {
+            "router": session_controller.router,
+            "tags": ["session"],
+            "description": "Persistent WebSocket chat session handling",
         },
         {
             "router": model_controller.router,

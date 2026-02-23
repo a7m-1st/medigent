@@ -1,6 +1,7 @@
 
 
 import asyncio
+import copy
 import logging
 from collections.abc import Generator
 
@@ -26,7 +27,16 @@ from camel.societies.workforce.workforce import (
     WorkforceState,
 )
 from camel.societies.workforce.workforce_metrics import WorkforceMetrics
-from camel.tasks.task import Task, TaskState, validate_task_content
+from camel.tasks.task import (
+    Task,
+    TaskState,
+    is_task_result_insufficient,
+    validate_task_content,
+)
+
+# Feature 4 — batch drain window in seconds.  After one returned task
+# arrives we wait up to this long for additional results before processing.
+_BATCH_DRAIN_WINDOW: float = 0.15
 
 from app.agent.listen_chat_agent import ListenChatAgent
 from app.component import code
@@ -64,6 +74,7 @@ class Workforce(BaseWorkforce):
     ) -> None:
         self.api_task_id = api_task_id
         self._support_native_tool_calling = support_native_tool_calling
+        self._preempted = False  # Feature 5: suppress ActionEndData on preemption
         logger.info("=" * 80)
         logger.info(
             "🏭 [WF-LIFECYCLE] Workforce.__init__ STARTED",
@@ -454,6 +465,18 @@ class Workforce(BaseWorkforce):
             subtasks = subtasks_result
 
         if subtasks:
+            # Deep-copy additional_info for each subtask so that
+            # mutations during worker execution (e.g. worker_attempts)
+            # do not leak back into the parent task's dict.
+            for st in subtasks:
+                if st.additional_info is not None:
+                    st.additional_info = copy.deepcopy(
+                        st.additional_info
+                    )
+                    # Remove stale execution data that may have leaked
+                    # from a previous turn via the shared reference.
+                    st.additional_info.pop("worker_attempts", None)
+
             self._pending_tasks.extendleft(reversed(subtasks))
             # Log task created events
             metrics_callbacks = [
@@ -475,11 +498,18 @@ class Workforce(BaseWorkforce):
             logger.warning(
                 "[DECOMPOSE] No subtasks returned, creating fallback task"
             )
+            fallback_info = (
+                copy.deepcopy(task.additional_info)
+                if task.additional_info
+                else None
+            )
+            if fallback_info:
+                fallback_info.pop("worker_attempts", None)
             fallback_task = Task(
                 content=task.content,
                 id=f"{task.id}.1",
                 parent=task,
-                additional_info=task.additional_info,
+                additional_info=fallback_info,
             )
             task.subtasks = [fallback_task]
             subtasks = [fallback_task]
@@ -854,6 +884,10 @@ class Workforce(BaseWorkforce):
         if task.failure_count < max_retries:
             return result
 
+        fallback_error_message = (
+            "Task failed after exhausting all retries. "
+            "No detailed error message was provided by the worker."
+        )
         error_message = ""
         # Use proper CAMEL pattern for metrics logging
         metrics_callbacks = [
@@ -868,6 +902,12 @@ class Workforce(BaseWorkforce):
                     error_message = entry.get("error_message")
                     break
 
+        final_error_message = str(
+            error_message or task.result or fallback_error_message
+        )
+        task.result = final_error_message
+        task.state = TaskState.FAILED
+
         task_lock = get_task_lock(self.api_task_id)
         await task_lock.put_queue(
             ActionTaskStateData(
@@ -876,13 +916,13 @@ class Workforce(BaseWorkforce):
                     "content": task.content,
                     "state": task.state,
                     "failure_count": task.failure_count,
-                    "result": str(error_message),
+                    "result": final_error_message,
                 }
             )
         )
 
         if metrics_callbacks:
-            error_msg = error_message or str(task.result or "Unknown error")
+            error_msg = final_error_message
             # Pass all values during construction since TaskFailedEvent is frozen
             worker_id = (
                 task.assigned_worker_id
@@ -970,6 +1010,15 @@ class Workforce(BaseWorkforce):
             f"[WF-LIFECYCLE] super().stop() completed, "
             f"new state: {self._state.name}"
         )
+
+        # Feature 5: When preempted, do NOT queue ActionEndData — the task
+        # is not finished, it's being superseded by a new question.
+        if self._preempted:
+            logger.info(
+                "[WF-LIFECYCLE] Skipping ActionEndData (preempted)"
+            )
+            return
+
         task_lock = get_task_lock(self.api_task_id)
         task = asyncio.create_task(task_lock.put_queue(ActionEndData()))
         task_lock.add_background_task(task)
@@ -1052,3 +1101,562 @@ class Workforce(BaseWorkforce):
             await delete_task_lock(self.api_task_id)
         except Exception as e:
             logger.error(f"Error cleaning up workforce resources: {e}")
+
+    # ------------------------------------------------------------------
+    # Feature 5: Preemption — cancel in-flight work for a new question
+    # ------------------------------------------------------------------
+
+    async def preempt_and_redirect(self) -> None:
+        """Cancel all in-flight subtasks so the workforce can immediately
+        start a brand-new task.
+
+        Unlike :meth:`stop`, this method does **not** queue an
+        ``ActionEndData`` event (the task is not "finished" — it is being
+        superseded).  The sequence is:
+
+        1. Signal ``_stop_requested`` so ``_listen_to_channel`` exits.
+        2. Cancel child listening tasks (workers' asyncio Tasks).
+        3. Give a short grace period for cancellation to propagate.
+        4. Call :meth:`prepare_for_new_task` to clear bookkeeping and
+           reset agents for the next task.
+
+        This method is safe to call from any thread — it uses
+        ``_submit_coro_to_loop`` when the workforce event loop is alive,
+        and falls back to synchronous cleanup otherwise.
+        """
+        logger.info(
+            "[WF-PREEMPT] preempt_and_redirect() called",
+            extra={"api_task_id": self.api_task_id, "workforce_id": id(self)},
+        )
+
+        if not self._running:
+            # Workforce already idle — just reset bookkeeping.
+            logger.info(
+                "[WF-PREEMPT] Workforce not running, "
+                "falling back to prepare_for_new_task()"
+            )
+            self.prepare_for_new_task()
+            return
+
+        # --- 1. Request stop (sets _stop_requested, unblocks pause) ---
+        self._stop_requested = True
+        self._preempted = True  # Suppress ActionEndData in stop()
+        if hasattr(self, "_pause_event"):
+            self._pause_event.set()
+
+        # --- 2. Cancel child listening tasks ---
+        for child_task in getattr(self, "_child_listening_tasks", []):
+            if not child_task.done():
+                child_task.cancel()
+
+        # Also cancel children's own tasks
+        for child in self._children:
+            if child._running:
+                try:
+                    child.stop()
+                except Exception as exc:
+                    logger.debug(
+                        f"[WF-PREEMPT] Ignoring error stopping "
+                        f"child {getattr(child, 'node_id', '?')}: {exc}"
+                    )
+
+        # Clear pending/in-flight immediately so the loop exits quickly
+        self._pending_tasks.clear()
+        self._in_flight_tasks = 0
+
+        # --- 3. Brief grace period for asyncio cancellation ---
+        try:
+            await asyncio.sleep(0.1)
+        except Exception:
+            pass
+
+        # Mark as not running so start() can be called again
+        self._running = False
+        self._state = WorkforceState.STOPPED
+
+        logger.info(
+            "[WF-PREEMPT] Workforce stopped, now resetting for new task"
+        )
+
+        # --- 4. Reset bookkeeping for the new task ---
+        self.prepare_for_new_task()
+
+        logger.info(
+            "[WF-PREEMPT] preempt_and_redirect() completed — "
+            "workforce ready for reuse",
+            extra={"api_task_id": self.api_task_id, "workforce_id": id(self)},
+        )
+
+    # ------------------------------------------------------------------
+    # Feature 3: Workforce reuse across tasks within the same project
+    # ------------------------------------------------------------------
+
+    def prepare_for_new_task(self) -> None:
+        """Reset the workforce so it can execute a brand-new task without
+        the cost of rebuilding workers, models, and toolkits from scratch.
+
+        This clears internal bookkeeping (pending/completed/in-flight tasks,
+        assignments, dependency maps) and resets every worker agent's memory
+        so that prior conversation doesn't leak into the next task.  The
+        workers, channel, and coordinator/task agents are kept intact.
+        """
+        logger.info(
+            "[WF-REUSE] prepare_for_new_task() called",
+            extra={"api_task_id": self.api_task_id, "workforce_id": id(self)},
+        )
+
+        # 1. Clear task bookkeeping
+        self._pending_tasks.clear()
+        self._completed_tasks.clear()
+        self._in_flight_tasks = 0
+        self._task = None
+        self._assignees.clear()
+        self._task_dependencies.clear()
+        self._stop_requested = False
+        self._preempted = False  # Feature 5: clear preemption flag
+
+        # 2. Reset state to IDLE so start() can be called again
+        self._state = WorkforceState.IDLE
+        self._running = False
+
+        # 3. Reset pause event (ensure not paused)
+        if hasattr(self, "_pause_event"):
+            self._pause_event.set()
+
+        # 4. Clear agent memory on coordinator and task agents
+        if hasattr(self, "coordinator_agent") and self.coordinator_agent:
+            self.coordinator_agent.reset()
+        if hasattr(self, "task_agent") and self.task_agent:
+            self.task_agent.reset()
+
+        # 5. Reset each worker's agent memory (but keep the agent alive)
+        for child in self._children:
+            if isinstance(child, SingleAgentWorker):
+                # Reset the primary worker agent
+                if hasattr(child, "worker") and child.worker is not None:
+                    child.worker.reset()
+                # Reset any pooled clones
+                if hasattr(child, "agent_pool") and child.agent_pool:
+                    for pooled_agent in child.agent_pool._available_agents:
+                        pooled_agent.reset()
+
+        # 6. Recreate channel so old task packets don't leak
+        self.set_channel(TaskChannel())
+        for child in self._children:
+            child.set_channel(self._channel)
+
+        # 7. Cancel stale child listening tasks and restart workers
+        for task in getattr(self, "_child_listening_tasks", []):
+            if not task.done():
+                task.cancel()
+        self._child_listening_tasks = []
+
+        logger.info(
+            "[WF-REUSE] prepare_for_new_task() completed — "
+            "workforce ready for reuse",
+            extra={"api_task_id": self.api_task_id, "workforce_id": id(self)},
+        )
+
+    # ------------------------------------------------------------------
+    # Working-directory hot-swap for cached workforce reuse
+    # ------------------------------------------------------------------
+
+    def update_working_directory(self, new_directory: str) -> None:
+        """Update the working directory on all toolkit instances inside this
+        workforce **in-place**, without destroying and recreating agents.
+
+        This is called when a follow-up message references a new task_id
+        (and therefore a new on-disk folder) while the workforce is
+        being reused from cache.  It walks:
+
+        1. coordinator_agent, task_agent  (their tools may include NoteTakingToolkit)
+        2. Every child worker's primary agent (and pooled clones)
+        3. System messages on coordinator_agent and task_agent (patch
+           stale working-directory references so the decomposer and
+           coordinator use the correct task folder)
+
+        For each agent, it introspects ``FunctionTool.func`` to locate the
+        bound toolkit instance and patches its path attributes.
+        """
+        import re as _re
+        from pathlib import Path as _Path
+
+        updated_count = 0
+
+        # ----------------------------------------------------------
+        # 0. Patch system messages on coordinator & task agents so the
+        #    working-directory reference stays current.  The text we
+        #    need to replace looks like:
+        #      at working directory `C:\...\task_task-OLD`
+        # ----------------------------------------------------------
+        _sys_msg_pattern = _re.compile(
+            r"(at working directory\s+`)([^`]+)(`)"
+        )
+
+        def _patch_system_message(agent) -> bool:
+            """Replace the working-directory path inside the agent's
+            system message.  Returns True if a substitution was made."""
+            sys_msg = getattr(agent, "_system_message", None)
+            if sys_msg is None:
+                return False
+            content = getattr(sys_msg, "content", "")
+            if not content:
+                return False
+
+            # Normalise the new directory to match the style already
+            # present in the system message (backslash on Windows).
+            new_dir_str = str(_Path(new_directory))
+
+            # Use a replacement *function* instead of a replacement
+            # string to avoid re.escape() corrupting the path.
+            # re.escape() is for search patterns, NOT replacement
+            # strings — it escapes hyphens etc. which get interpreted
+            # as literal backslash+char in the replacement output.
+            def _make_replacement(m, _dir=new_dir_str):
+                return m.group(1) + _dir + m.group(3)
+
+            new_content, n = _sys_msg_pattern.subn(
+                _make_replacement,
+                content,
+            )
+            if n > 0:
+                agent.update_system_message(new_content, reset_memory=True)
+                logger.debug(
+                    f"[WF-REUSE] Patched system message on "
+                    f"{agent.__class__.__name__} "
+                    f"(id={id(agent)}) → {new_dir_str}"
+                )
+                return True
+            return False
+
+        for attr in ("coordinator_agent", "task_agent", "new_worker_agent"):
+            agent = getattr(self, attr, None)
+            if agent is not None:
+                if _patch_system_message(agent):
+                    updated_count += 1
+
+        def _patch_toolkits_on_agent(agent):
+            """Patch toolkit working dirs reachable from *agent*."""
+            nonlocal updated_count
+            internal_tools = getattr(agent, "_internal_tools", None)
+            if not isinstance(internal_tools, dict):
+                return
+            seen_toolkit_ids: set[int] = set()
+            for tool in internal_tools.values():
+                func = getattr(tool, "func", None)
+                if func is None:
+                    continue
+                toolkit = getattr(func, "__self__", None)
+                if toolkit is None:
+                    continue
+                tk_id = id(toolkit)
+                if tk_id in seen_toolkit_ids:
+                    continue
+                seen_toolkit_ids.add(tk_id)
+
+                # NoteTakingToolkit (CAMEL base) — Path attribute
+                if hasattr(toolkit, "working_directory") and isinstance(
+                    toolkit.working_directory, _Path
+                ):
+                    new_path = _Path(new_directory)
+                    if toolkit.working_directory != new_path:
+                        new_path.mkdir(parents=True, exist_ok=True)
+                        toolkit.working_directory = new_path
+                        toolkit.registry_file = new_path / ".note_register"
+                        updated_count += 1
+
+                # TerminalToolkit (CAMEL base) — str attribute
+                if hasattr(toolkit, "working_dir") and isinstance(
+                    toolkit.working_dir, str
+                ):
+                    import os as _os
+
+                    abs_new = _os.path.abspath(new_directory)
+                    if toolkit.working_dir != abs_new:
+                        toolkit.working_dir = abs_new
+                        updated_count += 1
+
+        # 1. Coordinator + task agents
+        for attr in ("coordinator_agent", "task_agent", "new_worker_agent"):
+            agent = getattr(self, attr, None)
+            if agent is not None:
+                _patch_toolkits_on_agent(agent)
+
+        # 2. Child workers (SingleAgentWorker instances)
+        for child in self._children:
+            worker = getattr(child, "worker", None)
+            if worker is not None:
+                _patch_toolkits_on_agent(worker)
+                # Also patch the worker agent's system message
+                if _patch_system_message(worker):
+                    updated_count += 1
+            # Pooled clones
+            pool = getattr(child, "agent_pool", None)
+            if pool is not None:
+                for pooled in pool._available_agents:
+                    _patch_toolkits_on_agent(pooled)
+                    if _patch_system_message(pooled):
+                        updated_count += 1
+
+        if updated_count:
+            logger.info(
+                f"[WF-REUSE] update_working_directory() patched "
+                f"{updated_count} toolkit paths → {new_directory}",
+                extra={
+                    "api_task_id": self.api_task_id,
+                    "workforce_id": id(self),
+                },
+            )
+        else:
+            logger.debug(
+                "[WF-REUSE] update_working_directory() — "
+                "no toolkit paths needed updating",
+                extra={
+                    "api_task_id": self.api_task_id,
+                    "workforce_id": id(self),
+                },
+            )
+
+    # ------------------------------------------------------------------
+    # Feature 4: Concurrent subtask execution — batch-drain returned tasks
+    # ------------------------------------------------------------------
+
+    async def _drain_returned_tasks(
+        self,
+        first: Task,
+        window: float = _BATCH_DRAIN_WINDOW,
+    ) -> list[Task]:
+        """Collect *first* plus any additional returned tasks that arrive
+        within *window* seconds.
+
+        Workers execute concurrently, so several tasks may complete almost
+        simultaneously.  Instead of processing them one-by-one (each
+        requiring a separate loop iteration with pause/stop checks and
+        snapshot logic), we batch-drain the channel and hand them back
+        to the caller for streamlined processing.
+
+        Args:
+            first: The first returned task (already awaited by caller).
+            window: Maximum time (seconds) to wait for more results.
+
+        Returns:
+            A list starting with *first* followed by any extras.
+        """
+        batch: list[Task] = [first]
+        deadline = asyncio.get_event_loop().time() + window
+        while True:
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                break
+            try:
+                extra = await asyncio.wait_for(
+                    self._channel.get_returned_task_by_publisher(
+                        self.node_id
+                    ),
+                    timeout=remaining,
+                )
+                if extra is not None:
+                    batch.append(extra)
+            except (TimeoutError, asyncio.TimeoutError):
+                break
+            except Exception:
+                break
+        if len(batch) > 1:
+            logger.info(
+                f"[WF-BATCH] Drained {len(batch)} returned tasks "
+                f"in one batch"
+            )
+        return batch
+
+    async def _listen_to_channel(self) -> None:
+        """Optimised main loop with batch-drain of returned tasks.
+
+        This override replaces the base-class ``_listen_to_channel``
+        to reduce per-iteration overhead when multiple workers finish
+        at roughly the same time.  After the first returned task
+        arrives we wait up to ``_BATCH_DRAIN_WINDOW`` seconds for
+        additional results, then process the whole batch before
+        calling ``_post_ready_tasks()`` (which may trigger an LLM
+        coordinator call to assign newly-unblocked subtasks).
+        """
+        self._running = True
+        self._state = WorkforceState.RUNNING
+        logger.info(f"Workforce {self.node_id} started (batch-drain mode).")
+
+        await self._post_ready_tasks()
+
+        while (
+            self._task is None
+            or self._pending_tasks
+            or self._in_flight_tasks > 0
+        ) and not self._stop_requested:
+            try:
+                # ---- pause / stop / skip guards (from base class) ----
+                await self._pause_event.wait()
+                if self._stop_requested:
+                    logger.info("Stop requested, breaking execution loop.")
+                    break
+                if self._skip_requested:
+                    should_stop = await self._handle_skip_task()
+                    if should_stop:
+                        self._stop_requested = True
+                        break
+                    self._skip_requested = False
+                    continue
+
+                # ---- exit if nothing left ----
+                if not self._pending_tasks and self._in_flight_tasks == 0:
+                    break
+
+                # ---- decompose main tasks that were added dynamically ----
+                if self._pending_tasks and self._in_flight_tasks == 0:
+                    next_task = self._pending_tasks[0]
+                    if (
+                        next_task.additional_info
+                        and next_task.additional_info.get(
+                            "_needs_decomposition"
+                        )
+                    ):
+                        logger.info(
+                            f"Decomposing main task: {next_task.id}"
+                        )
+                        try:
+                            next_task.additional_info[
+                                "_needs_decomposition"
+                            ] = False
+                            await self.handle_decompose_append_task(
+                                next_task, reset=False
+                            )
+                            await self._handle_completed_task(next_task)
+                        except Exception as e:
+                            logger.error(
+                                f"Error decomposing main task "
+                                f"{next_task.id}: {e}",
+                                exc_info=True,
+                            )
+                            if not self._pending_tasks:
+                                self._pending_tasks.appendleft(next_task)
+                        await self._post_ready_tasks()
+                        continue
+
+                # ---- await first returned task ----
+                try:
+                    first_task = await self._get_returned_task()
+                except asyncio.TimeoutError:
+                    if self._in_flight_tasks > 0:
+                        logger.warning(
+                            f"Timeout waiting for "
+                            f"{self._in_flight_tasks} in-flight tasks."
+                        )
+                        break
+                    await self._post_ready_tasks()
+                    continue
+
+                if first_task is None:
+                    await self._post_ready_tasks()
+                    continue
+
+                # ---- Feature 4: batch-drain any extras ----
+                batch = await self._drain_returned_tasks(first_task)
+
+                for returned_task in batch:
+                    self._decrement_in_flight_tasks(
+                        returned_task.id, "task returned (batch)"
+                    )
+
+                if self._stop_requested:
+                    break
+
+                # ---- process each task in the batch ----
+                for returned_task in batch:
+                    if returned_task.state == TaskState.DONE:
+                        # Quick insufficient-result guard (matches
+                        # base-class inline check).  Full LLM-based
+                        # quality evaluation is intentionally skipped
+                        # here; the worker already validates results
+                        # via is_task_result_insufficient before
+                        # returning DONE.
+                        if is_task_result_insufficient(returned_task):
+                            logger.warning(
+                                f"[WF-BATCH] Task {returned_task.id} "
+                                f"marked DONE but result is "
+                                f"insufficient — treating as FAILED."
+                            )
+                            returned_task.state = TaskState.FAILED
+                            try:
+                                halt = await self._handle_failed_task(
+                                    returned_task
+                                )
+                                if halt:
+                                    if (
+                                        len(self.get_main_task_queue())
+                                        > 0
+                                    ):
+                                        self._skip_requested = True
+                                    else:
+                                        await self._graceful_shutdown(
+                                            returned_task
+                                        )
+                                        self._stop_requested = True
+                                    break
+                            except Exception as e:
+                                logger.error(
+                                    f"Error handling insufficient task "
+                                    f"{returned_task.id}: {e}",
+                                    exc_info=True,
+                                )
+                        else:
+                            await self._handle_completed_task(
+                                returned_task
+                            )
+                    elif returned_task.state == TaskState.FAILED:
+                        try:
+                            halt = await self._handle_failed_task(
+                                returned_task
+                            )
+                            if halt:
+                                if len(self.get_main_task_queue()) > 0:
+                                    self._skip_requested = True
+                                else:
+                                    await self._graceful_shutdown(
+                                        returned_task
+                                    )
+                                    self._stop_requested = True
+                                break
+                        except Exception as e:
+                            logger.error(
+                                f"Error handling failed task "
+                                f"{returned_task.id}: {e}",
+                                exc_info=True,
+                            )
+                    elif returned_task.state == TaskState.OPEN:
+                        pass
+                    else:
+                        raise ValueError(
+                            f"Task {returned_task.id} has an "
+                            f"unexpected state."
+                        )
+
+            except Exception as e:
+                self._decrement_in_flight_tasks(
+                    "unknown", "exception in task processing loop"
+                )
+                logger.error(
+                    f"Error processing task in workforce "
+                    f"{self.node_id}: {e}. "
+                    f"Pending: {len(self._pending_tasks)}, "
+                    f"In-flight: {self._in_flight_tasks}, "
+                    f"Completed: {len(self._completed_tasks)}"
+                )
+                if self._stop_requested:
+                    break
+                continue
+
+        # ---- final state ----
+        if self._stop_requested:
+            self._state = WorkforceState.STOPPED
+            logger.info("Workforce stopped by user request.")
+        elif not self._pending_tasks and self._in_flight_tasks == 0:
+            self._state = WorkforceState.IDLE
+            logger.info("All tasks completed.")
+        self.stop()

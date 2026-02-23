@@ -13,8 +13,19 @@ from camel.types import ModelPlatformType
 
 from app.agent.listen_chat_agent import ListenChatAgent, logger
 from app.model.chat import AgentModelConfig, Chat
+from app.service.model_registry import get_or_create_model
 from app.service.task import ActionCreateAgentData, Agents, get_task_lock
 from app.utils.event_loop_utils import _schedule_async_task
+
+
+def _normalize_agent_name(agent_name: str | Agents) -> str:
+    if isinstance(agent_name, Agents):
+        return agent_name.value
+
+    normalized = str(agent_name)
+    if normalized.startswith("Agents."):
+        return normalized.split(".", 1)[1]
+    return normalized
 
 
 def agent_model(
@@ -31,8 +42,9 @@ def agent_model(
 ):
     task_lock = get_task_lock(options.project_id)
     agent_id = str(uuid.uuid4())
+    normalized_agent_name = _normalize_agent_name(agent_name)
     logger.info(
-        f"Creating agent: {agent_name} with id: {agent_id} "
+        f"Creating agent: {normalized_agent_name} with id: {agent_id} "
         f"for project: {options.project_id}"
     )
     # Use thread-safe scheduling to support parallel agent creation
@@ -40,7 +52,7 @@ def agent_model(
         task_lock.put_queue(
             ActionCreateAgentData(
                 data={
-                    "agent_name": agent_name,
+                    "agent_name": normalized_agent_name,
                     "agent_id": agent_id,
                     "tools": tool_names or [],
                 }
@@ -69,9 +81,9 @@ def agent_model(
     init_params = {}
     model_config: dict[str, Any] = {}
 
-    if agent_name == Agents.task_agent:
+    if normalized_agent_name == Agents.task_agent.value:
         model_config["stream"] = True
-    if agent_name == Agents.clinical_researcher:
+    if normalized_agent_name == Agents.clinical_researcher.value:
         try:
             model_platform_enum = ModelPlatformType(
                 effective_config["model_platform"].lower()
@@ -108,11 +120,14 @@ def agent_model(
             f"(auto-compaction enabled at ~90% usage)"
         )
 
-    model = ModelFactory.create(
+    # Use shared model registry to avoid redundant ModelFactory.create() calls.
+    # Identical configurations (same platform/type/key/url) return the same
+    # cached backend instance — typically only 2 are needed (Gemini + MedGemma).
+    model = get_or_create_model(
         model_platform=effective_config["model_platform"].lower(),
         model_type=effective_config["model_type"],
         api_key=effective_config["api_key"],
-        url=effective_config["api_url"],
+        api_url=effective_config["api_url"],
         model_config_dict=model_config or None,
         timeout=600,  # 10 minutes
         **init_params,
@@ -121,7 +136,9 @@ def agent_model(
     # Handle simulated tool calling for models without native support
     if not support_native_tool_calling and tools:
         logger.info(
-            f"Agent {agent_name} using simulated tool calling (Hermes format)"
+            "Agent "
+            f"{normalized_agent_name} using simulated tool calling "
+            "(Hermes format)"
         )
         # Build tool descriptions for the system message
         tool_descriptions = []
@@ -166,7 +183,7 @@ After calling a tool, you will receive the result and should continue the conver
         # but don't pass them to ChatAgent (which would send them to the API)
         return ListenChatAgent(
             options.project_id,
-            agent_name,
+            normalized_agent_name,
             system_message,
             model=model,
             tools=tools,  # Pass tools for local execution
@@ -182,7 +199,7 @@ After calling a tool, you will receive the result and should continue the conver
 
     return ListenChatAgent(
         options.project_id,
-        agent_name,
+        normalized_agent_name,
         system_message,
         model=model,
         tools=tools,

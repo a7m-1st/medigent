@@ -3,7 +3,6 @@
 import platform
 
 from camel.messages import BaseMessage
-from camel.models import ModelFactory
 from camel.toolkits import ToolkitMessageIntegration
 
 from app.agent.agent_model import agent_model
@@ -17,7 +16,9 @@ from app.agent.toolkit.image_analysis_toolkit import ImageAnalysisToolkit
 from app.agent.toolkit.note_taking_toolkit import NoteTakingToolkit
 from app.agent.utils import NOW_STR
 from app.model.chat import AgentConfig, Chat
+from app.service.model_registry import get_or_create_model
 from app.service.task import Agents
+from app.service.toolkit_pool import get_or_create_toolkit
 from app.utils.file_utils import get_working_directory
 
 
@@ -46,22 +47,29 @@ async def chief_of_medicine_agent(options: Chat):
         ).send_message_to_user
     )
     
-    # Create model for image analysis toolkit
-    toolkit_model = ModelFactory.create(
+    # Use shared model registry for toolkit model (avoids redundant creation)
+    toolkit_model = get_or_create_model(
         model_platform=effective_config.model_platform.lower() if effective_config.model_platform else options.model_platform.lower(),
         model_type=effective_config.model_type if effective_config.model_type else options.model_type,
         api_key=effective_config.api_key if effective_config.api_key else options.api_key,
-        url=effective_config.api_url if effective_config.api_url else options.api_url,
+        api_url=effective_config.api_url if effective_config.api_url else options.api_url,
     )
     
-    note_toolkit = NoteTakingToolkit(
+    # Use toolkit pool for reusable toolkit instances (per-project caching)
+    note_toolkit = get_or_create_toolkit(
+        project_id=options.project_id,
+        toolkit_class=NoteTakingToolkit,
+        pool_key=Agents.chief_of_medicine,
         api_task_id=options.project_id,
         agent_name=Agents.chief_of_medicine,
         working_directory=working_directory,
     )
     note_toolkit = message_integration.register_toolkits(note_toolkit)
     
-    document_analysis_toolkit = DocumentAnalysisToolkit(
+    document_analysis_toolkit = get_or_create_toolkit(
+        project_id=options.project_id,
+        toolkit_class=DocumentAnalysisToolkit,
+        pool_key=Agents.chief_of_medicine,
         api_task_id=options.project_id,
         working_directory=working_directory,
     )
@@ -70,7 +78,10 @@ async def chief_of_medicine_agent(options: Chat):
         document_analysis_toolkit
     )
     
-    image_analysis_toolkit = ImageAnalysisToolkit(
+    image_analysis_toolkit = get_or_create_toolkit(
+        project_id=options.project_id,
+        toolkit_class=ImageAnalysisToolkit,
+        pool_key=Agents.chief_of_medicine,
         api_task_id=options.project_id,
         model=toolkit_model,
     )

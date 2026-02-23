@@ -13,6 +13,7 @@ from app.agent.toolkit.note_taking_toolkit import NoteTakingToolkit
 from app.agent.utils import NOW_STR
 from app.model.chat import AgentConfig, Chat
 from app.service.task import Agents
+from app.service.toolkit_pool import get_or_create_toolkit
 from app.utils.file_utils import get_working_directory
 
 
@@ -50,8 +51,11 @@ async def attending_physician_agent(options: Chat):
         ).send_message_to_user
     )
     
-    # Toolkits
-    note_toolkit = NoteTakingToolkit(
+    # Use toolkit pool for reusable toolkit instances (per-project caching)
+    note_toolkit = get_or_create_toolkit(
+        project_id=options.project_id,
+        toolkit_class=NoteTakingToolkit,
+        pool_key=Agents.attending_physician,
         api_task_id=options.project_id,
         agent_name=Agents.attending_physician,
         working_directory=working_directory,

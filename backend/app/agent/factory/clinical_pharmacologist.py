@@ -14,6 +14,7 @@ from app.agent.toolkit.search_toolkit import SearchToolkit
 from app.agent.utils import NOW_STR
 from app.model.chat import AgentConfig, Chat
 from app.service.task import Agents
+from app.service.toolkit_pool import get_or_create_toolkit
 from app.utils.file_utils import get_working_directory
 
 
@@ -51,11 +52,19 @@ async def clinical_pharmacologist_agent(options: Chat):
         ).send_message_to_user
     )
     
-    # Toolkits
-    search_toolkit = SearchToolkit(api_task_id=options.project_id)
+    # Use toolkit pool for reusable toolkit instances (per-project caching)
+    search_toolkit = get_or_create_toolkit(
+        project_id=options.project_id,
+        toolkit_class=SearchToolkit,
+        pool_key=Agents.clinical_pharmacologist,
+        api_task_id=options.project_id,
+    )
     search_toolkit = message_integration.register_toolkits(search_toolkit)
     
-    note_toolkit = NoteTakingToolkit(
+    note_toolkit = get_or_create_toolkit(
+        project_id=options.project_id,
+        toolkit_class=NoteTakingToolkit,
+        pool_key=Agents.clinical_pharmacologist,
         api_task_id=options.project_id,
         agent_name=Agents.clinical_pharmacologist,
         working_directory=working_directory,

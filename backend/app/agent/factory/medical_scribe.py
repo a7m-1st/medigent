@@ -15,6 +15,7 @@ from app.agent.toolkit.terminal_toolkit import TerminalToolkit
 from app.agent.utils import NOW_STR
 from app.model.chat import AgentConfig, Chat
 from app.service.task import Agents
+from app.service.toolkit_pool import get_or_create_toolkit
 from app.utils.file_utils import get_working_directory
 
 
@@ -43,9 +44,14 @@ async def medical_scribe_agent(options: Chat):
         ).send_message_to_user
     )
     
-    # Toolkits
-    file_write_toolkit = FileToolkit(
-        options.project_id,
+    # Use toolkit pool for reusable toolkit instances (per-project caching)
+    # FileToolkit and NoteTakingToolkit are pooled; TerminalToolkit is not
+    # (it has per-session state: command counts, venv)
+    file_write_toolkit = get_or_create_toolkit(
+        project_id=options.project_id,
+        toolkit_class=FileToolkit,
+        pool_key=Agents.medical_scribe,
+        api_task_id=options.project_id,
         working_directory=working_directory,
     )
     file_write_toolkit = message_integration.register_toolkits(file_write_toolkit)
@@ -59,7 +65,10 @@ async def medical_scribe_agent(options: Chat):
     )
     terminal_toolkit = message_integration.register_toolkits(terminal_toolkit)
     
-    note_toolkit = NoteTakingToolkit(
+    note_toolkit = get_or_create_toolkit(
+        project_id=options.project_id,
+        toolkit_class=NoteTakingToolkit,
+        pool_key=Agents.medical_scribe,
         api_task_id=options.project_id,
         agent_name=Agents.medical_scribe,
         working_directory=working_directory,

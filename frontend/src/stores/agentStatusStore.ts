@@ -1,6 +1,6 @@
+import { z } from 'zod';
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { z } from 'zod';
 
 // ============================================
 // Zod Schemas
@@ -124,19 +124,27 @@ export const useAgentStatusStore = create<AgentStatusState>()(
         state.idToName[agentId] = agentName;
 
         if (state.agents[agentName]) {
-          // Agent already exists (can happen with multiple create_agent events)
-          // Just add the new ID and update tools
+          // Agent already exists (can happen on session reuse/reconnect).
+          // Treat this as a fresh agent-view reset for the new run.
           if (!state.agents[agentName].knownIds.includes(agentId)) {
             state.agents[agentName].knownIds.push(agentId);
           }
+          state.agents[agentName].state = 'idle';
+          state.agents[agentName].currentTaskId = undefined;
+          state.agents[agentName].currentTaskContent = undefined;
+          state.agents[agentName].currentToolkit = undefined;
+          state.agents[agentName].currentMethod = undefined;
+          state.agents[agentName].lastInput = undefined;
+          state.agents[agentName].lastOutput = undefined;
           state.agents[agentName].tools = tools;
+          state.agents[agentName].tokensUsed = 0;
           state.agents[agentName].lastActivity = new Date();
-          state.agents[agentName].activityLog.push({
+          state.agents[agentName].activityLog = [{
             id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
             type: 'created',
             message: `Agent registered (${tools.length} tools)`,
             timestamp: new Date(),
-          });
+          }];
         } else {
           // Create new agent entry keyed by name
           state.agents[agentName] = {

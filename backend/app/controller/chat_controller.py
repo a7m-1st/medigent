@@ -22,6 +22,7 @@ from app.service.chat_service import step_solve
 from app.service.task import (
     Action,
     ActionImproveData,
+    ActionStartData,
     ActionStopData,
     ImprovePayload,
     delete_task_lock,
@@ -222,6 +223,20 @@ async def post(data: Chat, request: Request):
 
     task_lock = get_or_create_task_lock(data.project_id)
 
+    # Feature 3: When reusing an existing task_lock (follow-up in same
+    # project), drain any stale queue items from the prior SSE session
+    # and replace the queue so the new step_solve starts clean.
+    if not task_lock.queue.empty():
+        while not task_lock.queue.empty():
+            try:
+                task_lock.queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        chat_logger.info(
+            "Drained stale queue items from reused task_lock",
+            extra={"project_id": data.project_id},
+        )
+
     # Load conversation history from frontend (last N messages for context)
     if data.history and len(data.history) > 0:
         for msg in data.history:
@@ -287,6 +302,24 @@ def improve(id: str, data: SupplementChat):
         extra={"task_id": id, "question_length": len(data.question)},
     )
     task_lock = get_task_lock(id)
+
+    if data.task_id:
+        set_current_task_id(id, data.task_id)
+        os.environ["file_save_path"] = (
+            Path.home()
+            / "medgemma"
+            / f"project_{id}"
+            / f"task_{data.task_id}"
+        ).as_posix()
+        camel_log = (
+            Path.home()
+            / "medgemma"
+            / f"project_{id}"
+            / f"task_{data.task_id}"
+            / "camel_logs"
+        )
+        camel_log.mkdir(parents=True, exist_ok=True)
+        os.environ["CAMEL_LOG_DIR"] = str(camel_log)
 
     # Allow continuing conversation even after task is done
     # This supports multi-turn conversation after complex task completion
@@ -613,3 +646,6 @@ def delete_project_file(project_id: str, file_path: str):
         return Response(
             status_code=500, content=f"Failed to delete file: {str(e)}"
         )
+
+
+
