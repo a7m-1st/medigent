@@ -49,6 +49,7 @@ export const TaskInputPanel: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileAttachMenu, setShowMobileAttachMenu] = useState(false);
+  const mcpServers = useMcpStore((state) => state.servers);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
@@ -575,28 +576,25 @@ export const TaskInputPanel: React.FC = () => {
           <Paperclip className="w-5 h-5" />
         </Button>
 
-        {/* MCP Servers Indicator */}
+        {/* MCP Servers Indicator - Only show when MCP is configured */}
         {(() => {
-          const serverCount = Object.keys(useMcpStore.getState().servers).length;
+          const serverCount = Object.keys(mcpServers).length;
+          if (serverCount === 0) return null;
           return (
             <Button
               variant="ghost"
               size="icon"
               className={cn(
                 'w-10 h-10 rounded-xl shrink-0 transition-colors relative',
-                serverCount > 0
-                  ? 'text-accent hover:bg-accent-light'
-                  : 'text-foreground-muted hover:text-accent hover:bg-accent-light',
+                'text-accent hover:bg-accent-light',
               )}
               onClick={() => useMcpStore.getState().setDialogOpen(true)}
               title="MCP Servers"
             >
               <Plug className="w-5 h-5" />
-              {serverCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-accent text-accent-foreground text-[10px] font-bold flex items-center justify-center">
-                  {serverCount}
-                </span>
-              )}
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-accent text-accent-foreground text-[10px] font-bold flex items-center justify-center">
+                {serverCount}
+              </span>
             </Button>
           );
         })()}

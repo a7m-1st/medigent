@@ -183,7 +183,7 @@ export const McpConfigDialog: React.FC = () => {
             <SelectTrigger className="bg-input border-input-border text-foreground">
               <SelectValue placeholder="Transport (auto-detect)" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-background border border-border shadow-lg">
               <SelectItem value="auto">Auto-detect</SelectItem>
               <SelectItem value="sse">SSE</SelectItem>
               <SelectItem value="streamable_http">Streamable HTTP</SelectItem>

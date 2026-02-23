@@ -208,6 +208,10 @@ export function useChat(): UseChatReturn {
           agentStatusStore.reset();
         }
 
+        // Clear the agent info cache for the new session
+        const { clearAgentInfoCache } = await import('./useSSEHandler');
+        clearAgentInfoCache();
+
         store.setCurrentProject(data.project_id);
         if (data.task_id) {
           store.setCurrentTask(data.task_id);
@@ -453,13 +457,16 @@ export function useChat(): UseChatReturn {
     store.clearMessages();
   }, [store]);
 
-  const reset = useCallback(() => {
+  const reset = useCallback(async () => {
     cleanupWS();
     store.reset();
     store.setConnected(false);
     agentStatusStore.reset();
     taskDecompStore.reset();
     resourceStore.reset();
+    // Clear the agent info cache
+    const { clearAgentInfoCache } = await import('./useSSEHandler');
+    clearAgentInfoCache();
   }, [store, cleanupWS, agentStatusStore, taskDecompStore, resourceStore]);
 
   return {

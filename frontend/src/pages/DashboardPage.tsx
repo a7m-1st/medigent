@@ -15,6 +15,7 @@ import {
 import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { useMcpStore } from '@/stores/mcpStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { clearAgentInfoCache } from '@/hooks/useSSEHandler';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   HelpCircle,
@@ -178,6 +179,7 @@ export const DashboardPage: React.FC = () => {
               useAgentStatusStore.getState().reset();
               useTaskDecompStore.getState().reset();
               useResourceStore.getState().reset();
+              clearAgentInfoCache();
               navigate('/');
             }}
             tooltip="New Chat"

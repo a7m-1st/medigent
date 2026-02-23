@@ -30,6 +30,35 @@ import {
 import { useCallback } from 'react';
 
 // ============================================
+// Agent Info Cache - Store agent data from create_agent but don't display yet
+// ============================================
+interface AgentInfo {
+  agentId: string;
+  agentName: string;
+  tools: string[];
+}
+
+const agentInfoCache: Map<string, AgentInfo> = new Map();
+
+function cacheAgentInfo(agentId: string, agentName: string, tools: string[]) {
+  agentInfoCache.set(agentId, { agentId, agentName, tools });
+  // Also cache by name for reverse lookup
+  agentInfoCache.set(agentName, { agentId, agentName, tools });
+}
+
+function getAgentInfoById(agentId: string): AgentInfo | undefined {
+  return agentInfoCache.get(agentId);
+}
+
+function getAgentInfoByName(agentName: string): AgentInfo | undefined {
+  return agentInfoCache.get(agentName);
+}
+
+export function clearAgentInfoCache() {
+  agentInfoCache.clear();
+}
+
+// ============================================
 // Main Agent Names check helper
 // ============================================
 function isMainAgent(name: string): boolean {
@@ -48,7 +77,13 @@ function ensureMainAgentExists(
   const store = useAgentStatusStore.getState();
   const existing = store.agents[agentName];
   if (!existing) {
-    store.createAgent(agentId, agentName, tools);
+    // Check if we have cached info from a create_agent event
+    const cachedInfo = getAgentInfoByName(agentName);
+    if (cachedInfo) {
+      store.createAgent(agentId, agentName, cachedInfo.tools);
+    } else {
+      store.createAgent(agentId, agentName, tools);
+    }
     return;
   }
 
@@ -188,8 +223,12 @@ export function useSSEHandler(options: SSEHandlerOptions = {}) {
   }
 
   function handleCreateAgent(data: SSECreateAgentEvent['data']) {
+    // Cache the agent info but don't display/create yet
+    // Agent will only be displayed when an assign_task event is received
     if (isMainAgent(data.agent_name)) {
-      agentStore.createAgent(data.agent_id, data.agent_name, data.tools);
+      cacheAgentInfo(data.agent_id, data.agent_name, data.tools);
+      // Register the ID mapping in the store for lookups
+      agentStore.registerAgentId(data.agent_name, data.agent_id);
     }
   }
 
@@ -288,7 +327,18 @@ export function useSSEHandler(options: SSEHandlerOptions = {}) {
   function handleAssignTask(data: SSEAssignTaskEvent['data']) {
     // Look up agent name by the assignee_id using the reverse lookup
     const store = useAgentStatusStore.getState();
-    const agentName = store.getAgentNameById(data.assignee_id);
+    let agentName = store.getAgentNameById(data.assignee_id);
+
+    // If agent doesn't exist yet but we have cached info, create it now
+    if (!agentName) {
+      const cachedInfo = getAgentInfoById(data.assignee_id);
+      if (cachedInfo && isMainAgent(cachedInfo.agentName)) {
+        agentName = cachedInfo.agentName;
+        // Create the agent now that it has a task assigned
+        store.createAgent(data.assignee_id, cachedInfo.agentName, cachedInfo.tools);
+      }
+    }
+
     const agent = agentName ? store.agents[agentName] : undefined;
     const displayName = agent?.displayName || 'Agent';
 
