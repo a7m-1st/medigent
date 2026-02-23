@@ -1,6 +1,7 @@
 
 
 import asyncio
+import copy
 import logging
 from collections.abc import Generator
 
@@ -464,6 +465,18 @@ class Workforce(BaseWorkforce):
             subtasks = subtasks_result
 
         if subtasks:
+            # Deep-copy additional_info for each subtask so that
+            # mutations during worker execution (e.g. worker_attempts)
+            # do not leak back into the parent task's dict.
+            for st in subtasks:
+                if st.additional_info is not None:
+                    st.additional_info = copy.deepcopy(
+                        st.additional_info
+                    )
+                    # Remove stale execution data that may have leaked
+                    # from a previous turn via the shared reference.
+                    st.additional_info.pop("worker_attempts", None)
+
             self._pending_tasks.extendleft(reversed(subtasks))
             # Log task created events
             metrics_callbacks = [
@@ -485,11 +498,18 @@ class Workforce(BaseWorkforce):
             logger.warning(
                 "[DECOMPOSE] No subtasks returned, creating fallback task"
             )
+            fallback_info = (
+                copy.deepcopy(task.additional_info)
+                if task.additional_info
+                else None
+            )
+            if fallback_info:
+                fallback_info.pop("worker_attempts", None)
             fallback_task = Task(
                 content=task.content,
                 id=f"{task.id}.1",
                 parent=task,
-                additional_info=task.additional_info,
+                additional_info=fallback_info,
             )
             task.subtasks = [fallback_task]
             subtasks = [fallback_task]
@@ -1216,8 +1236,8 @@ class Workforce(BaseWorkforce):
                 if hasattr(child, "worker") and child.worker is not None:
                     child.worker.reset()
                 # Reset any pooled clones
-                if hasattr(child, "_agent_pool"):
-                    for pooled_agent in child._agent_pool:
+                if hasattr(child, "agent_pool") and child.agent_pool:
+                    for pooled_agent in child.agent_pool._available_agents:
                         pooled_agent.reset()
 
         # 6. Recreate channel so old task packets don't leak
@@ -1251,13 +1271,69 @@ class Workforce(BaseWorkforce):
 
         1. coordinator_agent, task_agent  (their tools may include NoteTakingToolkit)
         2. Every child worker's primary agent (and pooled clones)
+        3. System messages on coordinator_agent and task_agent (patch
+           stale working-directory references so the decomposer and
+           coordinator use the correct task folder)
 
         For each agent, it introspects ``FunctionTool.func`` to locate the
         bound toolkit instance and patches its path attributes.
         """
+        import re as _re
         from pathlib import Path as _Path
 
         updated_count = 0
+
+        # ----------------------------------------------------------
+        # 0. Patch system messages on coordinator & task agents so the
+        #    working-directory reference stays current.  The text we
+        #    need to replace looks like:
+        #      at working directory `C:\...\task_task-OLD`
+        # ----------------------------------------------------------
+        _sys_msg_pattern = _re.compile(
+            r"(at working directory\s+`)([^`]+)(`)"
+        )
+
+        def _patch_system_message(agent) -> bool:
+            """Replace the working-directory path inside the agent's
+            system message.  Returns True if a substitution was made."""
+            sys_msg = getattr(agent, "_system_message", None)
+            if sys_msg is None:
+                return False
+            content = getattr(sys_msg, "content", "")
+            if not content:
+                return False
+
+            # Normalise the new directory to match the style already
+            # present in the system message (backslash on Windows).
+            new_dir_str = str(_Path(new_directory))
+
+            # Use a replacement *function* instead of a replacement
+            # string to avoid re.escape() corrupting the path.
+            # re.escape() is for search patterns, NOT replacement
+            # strings — it escapes hyphens etc. which get interpreted
+            # as literal backslash+char in the replacement output.
+            def _make_replacement(m, _dir=new_dir_str):
+                return m.group(1) + _dir + m.group(3)
+
+            new_content, n = _sys_msg_pattern.subn(
+                _make_replacement,
+                content,
+            )
+            if n > 0:
+                agent.update_system_message(new_content, reset_memory=True)
+                logger.debug(
+                    f"[WF-REUSE] Patched system message on "
+                    f"{agent.__class__.__name__} "
+                    f"(id={id(agent)}) → {new_dir_str}"
+                )
+                return True
+            return False
+
+        for attr in ("coordinator_agent", "task_agent", "new_worker_agent"):
+            agent = getattr(self, attr, None)
+            if agent is not None:
+                if _patch_system_message(agent):
+                    updated_count += 1
 
         def _patch_toolkits_on_agent(agent):
             """Patch toolkit working dirs reachable from *agent*."""
@@ -1311,9 +1387,16 @@ class Workforce(BaseWorkforce):
             worker = getattr(child, "worker", None)
             if worker is not None:
                 _patch_toolkits_on_agent(worker)
+                # Also patch the worker agent's system message
+                if _patch_system_message(worker):
+                    updated_count += 1
             # Pooled clones
-            for pooled in getattr(child, "_agent_pool", []):
-                _patch_toolkits_on_agent(pooled)
+            pool = getattr(child, "agent_pool", None)
+            if pool is not None:
+                for pooled in pool._available_agents:
+                    _patch_toolkits_on_agent(pooled)
+                    if _patch_system_message(pooled):
+                        updated_count += 1
 
         if updated_count:
             logger.info(

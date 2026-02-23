@@ -331,11 +331,24 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 else:
                     assert isinstance(item, ActionImproveData)
                     question = item.data.question
-                    attaches_raw = (
-                        item.data.attaches
-                        if item.data.attaches
-                        else options.attaches
-                    )
+                    item_attaches = item.data.attaches
+                    if item_attaches:
+                        attaches_raw = item_attaches
+                        logger.info(
+                            "[NEW-QUESTION] Using attaches "
+                            "from ActionImproveData: "
+                            f"{[Path(p).name if '/' in p or chr(92) in p else p[:30] for p in item_attaches]}"
+                        )
+                    else:
+                        attaches_raw = options.attaches
+                        logger.warning(
+                            "[NEW-QUESTION] FALLBACK: "
+                            "item.data.attaches is empty, "
+                            "using options.attaches "
+                            "(original turn). This may use "
+                            "STALE attachment data! "
+                            f"attaches={[Path(p).name if '/' in p or chr(92) in p else p[:30] for p in (options.attaches or [])]}"
+                        )
                     logger.info(
                         "[NEW-QUESTION] Follow-up "
                         "question from "
@@ -594,6 +607,14 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 if task_files:
                     camel_task.additional_info = task_files
 
+                logger.info(
+                    "[CAMEL-TASK] Created camel_task: "
+                    f"id={camel_task.id} | "
+                    f"content_preview='{camel_task.content[:120]}' | "
+                    f"additional_info_keys="
+                    f"{list(camel_task.additional_info.keys()) if camel_task.additional_info else 'None'}"
+                )
+
                 # Stream decomposition in background
                 stream_state = {
                     "subtasks": [],
@@ -656,9 +677,9 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         )
 
                 async def run_decomposition():
-                    nonlocal summary_task_content
+                    nonlocal summary_task_content, sub_tasks
                     try:
-                        sub_tasks = await asyncio.to_thread(
+                        decomposed = await asyncio.to_thread(
                             workforce.workforce_make_sub_tasks,
                             camel_task,
                             context_for_coordinator,
@@ -667,12 +688,16 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         )
 
                         if stream_state["subtasks"]:
-                            sub_tasks = stream_state["subtasks"]
+                            decomposed = stream_state["subtasks"]
+                        # Update the OUTER sub_tasks so that
+                        # Action.start uses the fresh subtasks
+                        # instead of stale ones from a prior turn.
+                        sub_tasks = decomposed
                         state_holder["sub_tasks"] = sub_tasks
                         logger.info(
                             "Task decomposed into "
                             f"{len(sub_tasks)} subtasks"
-                        )
+                            )
                         try:
                             task_lock.decompose_sub_tasks = sub_tasks
                         except Exception:
@@ -1021,6 +1046,8 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     )
 
                 camel_task = None
+                sub_tasks = []
+                task_lock.decompose_sub_tasks = []
                 logger.info("[LIFECYCLE] camel_task set to None")
 
                 # DON'T break — keep SSE loop alive for follow-up messages.
