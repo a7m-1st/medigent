@@ -5,18 +5,33 @@ import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, Camera, FileText, Paperclip, PauseCircle, Send, Upload, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Camera,
+  FileText,
+  Paperclip,
+  PauseCircle,
+  Send,
+  Upload,
+  X,
+} from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+
+const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB limit
 
 // Default model configuration from environment variables
-const DEFAULT_MODEL_PLATFORM = import.meta.env.VITE_DEFAULT_MODEL_PLATFORM || 'GEMINI';
-const DEFAULT_MODEL_TYPE = import.meta.env.VITE_DEFAULT_MODEL_TYPE || 'GEMINI_3_FLASH';
-const DEFAULT_MODEL_API_URL = import.meta.env.VITE_DEFAULT_MODEL_API_URL || null;
+const DEFAULT_MODEL_PLATFORM =
+  import.meta.env.VITE_DEFAULT_MODEL_PLATFORM || 'GEMINI';
+const DEFAULT_MODEL_TYPE =
+  import.meta.env.VITE_DEFAULT_MODEL_TYPE || 'GEMINI_3_FLASH';
+const DEFAULT_MODEL_API_URL =
+  import.meta.env.VITE_DEFAULT_MODEL_API_URL || null;
 
 interface AttachedFile {
-  data: string;  // base64 data URL
-  name: string;  // original filename
+  data: string; // base64 data URL
+  name: string; // original filename
   type: 'image' | 'pdf';
 }
 
@@ -34,6 +49,7 @@ export const TaskInputPanel: React.FC = () => {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const inputChatRef = useRef<HTMLTextAreaElement>(null);
 
   // Handle responsive layout
   useEffect(() => {
@@ -49,18 +65,31 @@ export const TaskInputPanel: React.FC = () => {
   // Close mobile menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target as Node)) {
+      if (
+        mobileMenuRef.current &&
+        !mobileMenuRef.current.contains(event.target as Node)
+      ) {
         setShowMobileAttachMenu(false);
       }
     };
 
     if (showMobileAttachMenu) {
       document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+      return () =>
+        document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [showMobileAttachMenu]);
 
-  const { sendMessage, sendHumanReply, stopChat, isLoading, isStreaming } = useChat();
+  // Auto-resize textarea based on content
+  useEffect(() => {
+    if (inputChatRef.current) {
+      inputChatRef.current.style.height = 'auto';
+      inputChatRef.current.style.height = `${inputChatRef.current.scrollHeight}px`;
+    }
+  }, [message]);
+
+  const { sendMessage, sendHumanReply, stopChat, isLoading, isStreaming } =
+    useChat();
   const { geminiApiKey, backendHasApiKey } = useApiConfigStore();
 
   // Consume pending input from suggestion chips
@@ -72,42 +101,62 @@ export const TaskInputPanel: React.FC = () => {
     }
   }, [pendingInput]);
   const wasStopped = useChatStore((state) => state.wasStopped);
-  const waitingForHumanReply = useChatStore((state) => state.waitingForHumanReply);
+  const waitingForHumanReply = useChatStore(
+    (state) => state.waitingForHumanReply,
+  );
   const currentAskAgent = useChatStore((state) => state.currentAskAgent);
-  const currentAskAgentDisplayName = useChatStore((state) => state.currentAskAgentDisplayName);
-  const setWaitingForHumanReply = useChatStore((state) => state.setWaitingForHumanReply);
+  const currentAskAgentDisplayName = useChatStore(
+    (state) => state.currentAskAgentDisplayName,
+  );
+  const setWaitingForHumanReply = useChatStore(
+    (state) => state.setWaitingForHumanReply,
+  );
 
-  const isProcessing = (isStreaming || isLoading) && !wasStopped && !waitingForHumanReply;
-  const hasContent = message.trim() || attachments.length > 0;
-  const canSend = hasContent && (!isProcessing || waitingForHumanReply);
+  const isProcessing =
+    (isStreaming || isLoading) && !wasStopped && !waitingForHumanReply;
+  const hasText = message.trim().length > 0;
+  const hasContent = hasText || attachments.length > 0;
+  const canSend =
+    hasContent && (!isProcessing || waitingForHumanReply) && hasText;
 
   // Project-aware: check if there are prior persisted messages for the disclaimer
   const currentProjectId = useChatStore((state) => state.currentProjectId);
   const projectFromStore = useProjectStore((s) =>
-    currentProjectId ? s.projects.find((p) => p.id === currentProjectId) : undefined
+    currentProjectId
+      ? s.projects.find((p) => p.id === currentProjectId)
+      : undefined,
   );
-  const hasPriorMessages = (projectFromStore?.messages?.length ?? 0) > 0 && !isStreaming;
+  const hasPriorMessages =
+    (projectFromStore?.messages?.length ?? 0) > 0 && !isStreaming;
   const showDisclaimer = hasPriorMessages && message.trim().length > 0;
 
   // Process files (from input or drag & drop)
   const processFiles = useCallback((files: FileList | File[]) => {
-    Array.from(files).forEach(file => {
+    Array.from(files).forEach((file) => {
       // Accept image files and PDF files
       const isImage = file.type.startsWith('image/');
       const isPdf = file.type === 'application/pdf';
-      
+
       if (!isImage && !isPdf) {
         console.warn('Skipping unsupported file type:', file.name, file.type);
         return;
       }
-      
+
+      if (file.size > MAX_FILE_SIZE) {
+        toast.error(`File "${file.name}" exceeds the maximum size of 2MB`);
+        return;
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
-        setAttachments(prev => [...prev, {
-          data: reader.result as string,
-          name: file.name,
-          type: isImage ? 'image' : 'pdf'
-        }]);
+        setAttachments((prev) => [
+          ...prev,
+          {
+            data: reader.result as string,
+            name: file.name,
+            type: isImage ? 'image' : 'pdf',
+          },
+        ]);
       };
       reader.readAsDataURL(file);
     });
@@ -142,22 +191,28 @@ export const TaskInputPanel: React.FC = () => {
   };
 
   const removeAttachment = (index: number) => {
-    setAttachments(prev => prev.filter((_, i) => i !== index));
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
   // Drag & Drop handlers
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (isProcessing) return;
-    setIsDragging(true);
-  }, [isProcessing]);
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (isProcessing) return;
+      setIsDragging(true);
+    },
+    [isProcessing],
+  );
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     // Only set isDragging to false if we're leaving the drop zone entirely
-    if (dropZoneRef.current && !dropZoneRef.current.contains(e.relatedTarget as Node)) {
+    if (
+      dropZoneRef.current &&
+      !dropZoneRef.current.contains(e.relatedTarget as Node)
+    ) {
       setIsDragging(false);
     }
   }, []);
@@ -167,24 +222,40 @@ export const TaskInputPanel: React.FC = () => {
     e.stopPropagation();
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
 
-    if (isProcessing) return;
+      if (isProcessing) return;
 
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      processFiles(files);
-    }
-  }, [isProcessing, processFiles]);
+      const files = e.dataTransfer.files;
+      if (files && files.length > 0) {
+        processFiles(files);
+      }
+    },
+    [isProcessing, processFiles],
+  );
 
   const handleSend = async () => {
-    console.log('Send clicked! Message:', message, 'Processing:', isProcessing, 'API Key exists:', !!geminiApiKey, 'WaitingForHumanReply:', waitingForHumanReply);
-    
+    console.log(
+      'Send clicked! Message:',
+      message,
+      'Processing:',
+      isProcessing,
+      'API Key exists:',
+      !!geminiApiKey,
+      'WaitingForHumanReply:',
+      waitingForHumanReply,
+    );
+
     // Handle human reply mode
-    if (waitingForHumanReply && currentAskAgent && (message.trim() || attachments.length > 0)) {
+    if (
+      waitingForHumanReply &&
+      currentAskAgent &&
+      (message.trim() || attachments.length > 0)
+    ) {
       const currentMessage = message;
       const currentAttachments = [...attachments];
       setMessage('');
@@ -196,8 +267,14 @@ export const TaskInputPanel: React.FC = () => {
         role: 'user',
         content: currentMessage,
         timestamp: new Date().toISOString(),
-        images: currentAttachments.filter(a => a.type === 'image').map(a => a.data) || undefined,
-        files: currentAttachments.filter(a => a.type === 'pdf').map(a => ({ data: a.data, name: a.name })) || undefined,
+        images:
+          currentAttachments
+            .filter((a) => a.type === 'image')
+            .map((a) => a.data) || undefined,
+        files:
+          currentAttachments
+            .filter((a) => a.type === 'pdf')
+            .map((a) => ({ data: a.data, name: a.name })) || undefined,
       };
       useChatStore.getState().addMessage(userMsg);
       const pid = useChatStore.getState().currentProjectId;
@@ -209,7 +286,11 @@ export const TaskInputPanel: React.FC = () => {
       setWaitingForHumanReply(false, null);
 
       try {
-        await sendHumanReply(currentAskAgent, currentMessage, currentAttachments.map(a => a.data));
+        await sendHumanReply(
+          currentAskAgent,
+          currentMessage,
+          currentAttachments.map((a) => a.data),
+        );
         console.log('Human reply sent successfully');
       } catch (error) {
         console.error('Failed to send human reply:', error);
@@ -218,7 +299,7 @@ export const TaskInputPanel: React.FC = () => {
       }
       return;
     }
-    
+
     if ((message.trim() || attachments.length > 0) && !isProcessing) {
       // Check if API key is configured (frontend or backend)
       if (!geminiApiKey && !backendHasApiKey) {
@@ -241,13 +322,21 @@ export const TaskInputPanel: React.FC = () => {
         role: 'user',
         content: currentMessage,
         timestamp: new Date().toISOString(),
-        images: currentAttachments.filter(a => a.type === 'image').map(a => a.data) || undefined,
-        files: currentAttachments.filter(a => a.type === 'pdf').map(a => ({ data: a.data, name: a.name })) || undefined,
+        images:
+          currentAttachments
+            .filter((a) => a.type === 'image')
+            .map((a) => a.data) || undefined,
+        files:
+          currentAttachments
+            .filter((a) => a.type === 'pdf')
+            .map((a) => ({ data: a.data, name: a.name })) || undefined,
       };
       useChatStore.getState().addMessage(userMsg);
       const existingProjectId = useChatStore.getState().currentProjectId;
       if (existingProjectId) {
-        useProjectStore.getState().addMessageToProject(existingProjectId, userMsg);
+        useProjectStore
+          .getState()
+          .addMessageToProject(existingProjectId, userMsg);
       }
 
       try {
@@ -261,15 +350,20 @@ export const TaskInputPanel: React.FC = () => {
 
         // Use sendMessage which automatically detects whether to use improve or start new chat
         // If no frontend key, send empty string — backend will use its .env default
-        await sendMessage(currentMessage, currentAttachments.map(a => a.data), {
-          model_platform: DEFAULT_MODEL_PLATFORM,
-          model_type: DEFAULT_MODEL_TYPE,
-          api_key: geminiApiKey || "",
-          api_url: DEFAULT_MODEL_API_URL,
-          max_retries: 5,
-          installed_mcp: { mcpServers: {} },
-          summary_prompt: "",
-        }, last5Messages);
+        await sendMessage(
+          currentMessage,
+          currentAttachments.map((a) => a.data),
+          {
+            model_platform: DEFAULT_MODEL_PLATFORM,
+            model_type: DEFAULT_MODEL_TYPE,
+            api_key: geminiApiKey || '',
+            api_url: DEFAULT_MODEL_API_URL,
+            max_retries: 3,
+            installed_mcp: { mcpServers: {} },
+            summary_prompt: '',
+          },
+          last5Messages,
+        );
 
         console.log('Message sent successfully');
 
@@ -307,8 +401,8 @@ export const TaskInputPanel: React.FC = () => {
     <div
       ref={dropZoneRef}
       className={cn(
-        "flex flex-col bg-background relative transition-colors",
-        isDragging && "bg-accent/5"
+        'flex flex-col bg-background relative transition-colors',
+        isDragging && 'bg-accent/5',
       )}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -343,7 +437,8 @@ export const TaskInputPanel: React.FC = () => {
           >
             <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
             <span className="text-xs font-medium text-amber-500">
-              {currentAskAgentDisplayName || currentAskAgent} is waiting for your reply
+              {currentAskAgentDisplayName || currentAskAgent} is waiting for
+              your reply
             </span>
           </motion.div>
         )}
@@ -367,7 +462,11 @@ export const TaskInputPanel: React.FC = () => {
                 className="relative group w-20 h-16 rounded-lg overflow-hidden border border-border bg-background-secondary flex flex-col items-center justify-center"
               >
                 {file.type === 'image' ? (
-                  <img src={file.data} alt={file.name} className="w-full h-full object-cover" />
+                  <img
+                    src={file.data}
+                    alt={file.name}
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
                   <div className="flex flex-col items-center justify-center p-1 w-full h-full bg-red-50 dark:bg-red-900/30">
                     <FileText className="w-6 h-6 text-red-500 dark:text-red-400" />
@@ -392,8 +491,6 @@ export const TaskInputPanel: React.FC = () => {
         )}
       </AnimatePresence>
 
-
-
       {/* Input Area */}
       <div className="flex-1 flex items-center gap-3 p-4 relative">
         {/* File input for desktop and Files option */}
@@ -405,7 +502,7 @@ export const TaskInputPanel: React.FC = () => {
           ref={fileInputRef}
           onChange={handleFileUpload}
         />
-        
+
         {/* Camera input for mobile camera option */}
         <input
           type="file"
@@ -453,9 +550,9 @@ export const TaskInputPanel: React.FC = () => {
           variant="ghost"
           size="icon"
           className={cn(
-            "w-10 h-10 rounded-xl shrink-0 transition-colors",
-            "text-foreground-muted hover:text-accent hover:bg-accent-light",
-            showMobileAttachMenu && "text-accent bg-accent-light"
+            'w-10 h-10 rounded-xl shrink-0 transition-colors',
+            'text-foreground-muted hover:text-accent hover:bg-accent-light',
+            showMobileAttachMenu && 'text-accent bg-accent-light',
           )}
           onClick={handleAttachClick}
           disabled={isProcessing}
@@ -465,13 +562,14 @@ export const TaskInputPanel: React.FC = () => {
 
         <div
           className={cn(
-            "flex-1 relative rounded-xl transition-all duration-200",
-            isFocused && !waitingForHumanReply && "ring-2 ring-accent/20",
-            isFocused && waitingForHumanReply && "ring-2 ring-amber-500/30"
+            'flex-1 relative rounded-xl transition-all duration-200',
+            isFocused && !waitingForHumanReply && 'border-accent',
+            isFocused && waitingForHumanReply && 'ring-2 ring-amber-500/30',
           )}
         >
-          <input
-            type="text"
+          <textarea
+            ref={inputChatRef}
+            rows={1}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -484,24 +582,29 @@ export const TaskInputPanel: React.FC = () => {
                   const item = clipboardData.items[i];
                   if (item.type.startsWith('image/')) {
                     e.preventDefault();
-                    alert('Cannot read clipboard: this model does not support image input. Please use the attachment button to upload images.');
+                    alert(
+                      'Cannot read clipboard: this model does not support image input. Please use the attachment button to upload images.',
+                    );
                     return;
                   }
                 }
               }
             }}
-            placeholder={waitingForHumanReply && currentAskAgent
-              ? `Reply to ${currentAskAgent}...`
-              : "Enter your task or question..."
+            placeholder={
+              waitingForHumanReply && currentAskAgent
+                ? `Reply to ${currentAskAgent}...`
+                : 'Enter your task or question...'
             }
             className={cn(
-              "w-full bg-input border border-input-border rounded-xl px-4 py-3",
-              "text-foreground placeholder:text-foreground-muted",
-              "focus:outline-none transition-colors",
-              waitingForHumanReply 
-                ? "border-amber-500/40 focus:border-amber-500 placeholder:text-amber-500/60"
-                : "focus:border-accent",
-              isProcessing && !waitingForHumanReply && "opacity-60"
+              'w-full bg-input border border-input-border rounded-xl px-4 py-2.5',
+              'text-foreground placeholder:text-foreground-muted',
+              'focus:outline-none transition-colors resize-none overflow-y-auto',
+              'scrollbar-hide',
+              'min-h-[48px] max-h-[130px]',
+              waitingForHumanReply
+                ? 'border-amber-500/40 focus:border-amber-500 placeholder:text-amber-500/60'
+                : 'focus:border-accent',
+              isProcessing && !waitingForHumanReply && 'opacity-60',
             )}
           />
         </div>
@@ -523,12 +626,12 @@ export const TaskInputPanel: React.FC = () => {
               handleSend();
             }}
             className={cn(
-              "w-10 h-10 rounded-xl transition-all duration-300 shrink-0",
+              'w-10 h-10 rounded-xl transition-all duration-300 shrink-0',
               canSend
                 ? waitingForHumanReply
-                  ? "bg-amber-600 hover:bg-amber-500 text-white shadow-[0_0_15px_rgba(217,119,6,0.4)]"
-                  : "bg-accent hover:bg-accent-hover text-accent-foreground shadow-glow"
-                : "bg-background-tertiary text-foreground-muted cursor-not-allowed"
+                  ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-[0_0_15px_rgba(217,119,6,0.4)]'
+                  : 'bg-accent hover:bg-accent-hover text-accent-foreground shadow-glow'
+                : 'bg-background-tertiary text-foreground-muted cursor-not-allowed',
             )}
           >
             <Send className="w-4 h-4" />
@@ -537,10 +640,12 @@ export const TaskInputPanel: React.FC = () => {
       </div>
 
       {/* Status Bar - Hidden on mobile */}
-      <div className={cn(
-        "px-4 pb-3 flex items-center justify-center gap-4 text-[10px] text-foreground-muted font-medium uppercase tracking-widest",
-        isMobile && "hidden"
-      )}>
+      <div
+        className={cn(
+          'px-4 pb-3 flex items-center justify-center gap-4 text-[10px] text-foreground-muted font-medium uppercase tracking-widest',
+          isMobile && 'hidden',
+        )}
+      >
         <span>Gemini 3 Flash + Medgemma</span>
         <span className="w-1 h-1 rounded-full bg-border" />
         <span>Multi-Agent System</span>

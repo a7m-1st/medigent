@@ -1,3 +1,4 @@
+import { encrypt } from '@/lib/encryption';
 import { SSEConnection } from '@/lib/sse';
 import * as chatService from '@/services/chatService';
 import {
@@ -309,7 +310,8 @@ export function useChat(): UseChatReturn {
         attaches: attaches || [],
         model_platform: config?.model_platform || DEFAULT_MODEL_PLATFORM,
         model_type: config?.model_type || DEFAULT_MODEL_TYPE,
-        api_key: config?.api_key || '',
+        // api_key: config?.api_key || '',
+        api_key: await encrypt(config?.api_key || ''),
         api_url: config?.api_url ?? DEFAULT_MODEL_API_URL,
         max_retries: config?.max_retries || 5,
         installed_mcp: config?.installed_mcp || { mcpServers: {} },

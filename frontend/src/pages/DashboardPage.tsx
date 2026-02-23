@@ -4,7 +4,13 @@ import { ConversationPanel } from '@/components/conversation/ConversationPanel';
 import { ErrorBanner } from '@/components/layout/ErrorBanner';
 import { MonitoringPanel } from '@/components/task-panel/MonitoringPanel';
 import { cn } from '@/lib/utils';
-import { useAgentStatusStore, useChatStore, useResourceStore, useTaskDecompStore, useUIStore } from '@/stores';
+import {
+  useAgentStatusStore,
+  useChatStore,
+  useResourceStore,
+  useTaskDecompStore,
+  useUIStore,
+} from '@/stores';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -22,13 +28,19 @@ import {
   Sun,
 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from 'react-router-dom';
 
 // Responsive breakpoint
 const MOBILE_BREAKPOINT = 1024;
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [rightSidebarOpen, setRightSidebarOpen] = React.useState(true);
   const [isMobile, setIsMobile] = useState(false);
@@ -54,7 +66,30 @@ export const DashboardPage: React.FC = () => {
 
   // Handle responsive layout and viewport changes (mobile keyboard, address bar hiding)
   const [, forceUpdate] = React.useReducer((x: number) => x + 1, 0);
-  
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < MOBILE_BREAKPOINT;
+      if (mobile && !prevIsMobile.current && rightSidebarOpen) {
+        setRightSidebarOpen(false);
+      }
+      prevIsMobile.current = mobile;
+      setIsMobile(mobile);
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+
+    // Check URL params for panel open
+    const panelParam = searchParams.get('panel');
+    if (panelParam === 'open') {
+      setRightSidebarOpen(true);
+      // Remove the param from URL
+      searchParams.delete('panel');
+      setSearchParams(searchParams);
+    }
+  }, []);
+
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < MOBILE_BREAKPOINT;
@@ -80,14 +115,20 @@ export const DashboardPage: React.FC = () => {
     };
 
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', handleVisualViewportResize);
+      window.visualViewport.addEventListener(
+        'resize',
+        handleVisualViewportResize,
+      );
       handleVisualViewportResize();
     }
 
     return () => {
       window.removeEventListener('resize', handleResize);
       if (window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', handleVisualViewportResize);
+        window.visualViewport.removeEventListener(
+          'resize',
+          handleVisualViewportResize,
+        );
       }
     };
   }, [rightSidebarOpen]);
@@ -100,21 +141,26 @@ export const DashboardPage: React.FC = () => {
     setTheme(nextTheme);
   };
 
-  const ThemeIcon = theme === 'system' ? Monitor : resolvedTheme === 'dark' ? Moon : Sun;
+  const ThemeIcon =
+    theme === 'system' ? Monitor : resolvedTheme === 'dark' ? Moon : Sun;
 
   return (
-    <div className={cn(
-      "fixed inset-0 bg-background text-foreground flex",
-      isMobile ? "overflow-y-auto" : "overflow-hidden"
-    )}
-    style={{ height: '100svh' }}>
+    <div
+      className={cn(
+        'fixed inset-0 bg-background text-foreground flex',
+        isMobile ? 'overflow-y-auto' : 'overflow-hidden',
+      )}
+      style={{ height: '100svh' }}
+    >
       <ApiKeyModal />
 
       {/* Left Sidebar Navigation - Hidden on mobile */}
-      <aside className={cn(
-        "w-16 flex-col items-center py-6 border-r border-border bg-sidebar z-50 shrink-0",
-        isMobile ? 'hidden' : 'flex'
-      )}>
+      <aside
+        className={cn(
+          'w-16 flex-col items-center py-6 border-r border-border bg-sidebar z-50 shrink-0',
+          isMobile ? 'hidden' : 'flex',
+        )}
+      >
         <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center mb-6 shadow-glow">
           <LayoutDashboard className="w-6 h-6 text-accent-foreground" />
         </div>
@@ -122,6 +168,7 @@ export const DashboardPage: React.FC = () => {
         <div className="flex-1 flex flex-col gap-6">
           <NavIcon
             icon={<MessageSquarePlus className="w-5 h-5" />}
+            active={location.pathname === '/'}
             onClick={() => {
               useChatStore.getState().reset();
               useAgentStatusStore.getState().reset();
@@ -131,14 +178,22 @@ export const DashboardPage: React.FC = () => {
             }}
             tooltip="New Chat"
           />
-          <NavIcon icon={<History className="w-5 h-5" />} onClick={() => navigate('/history')} />
+          <NavIcon
+            icon={<History className="w-5 h-5" />}
+            active={location.pathname === '/history'}
+            onClick={() => navigate('/history')}
+            tooltip="Project History"
+          />
           <NavIcon
             icon={<Settings className="w-5 h-5" />}
             onClick={() => useApiConfigStore.getState().setModalOpen(true)}
             tooltip="API Config"
           />
           <Link to="/thank-you">
-            <NavIcon icon={<HelpCircle className="w-5 h-5" />} />
+            <NavIcon
+              icon={<HelpCircle className="w-5 h-5" />}
+              tooltip="Acknowledgement"
+            />
           </Link>
         </div>
 
@@ -205,7 +260,7 @@ export const DashboardPage: React.FC = () => {
                 'p-2 rounded-lg transition-colors',
                 rightSidebarOpen
                   ? 'text-foreground-secondary hover:text-foreground hover:bg-background-secondary'
-                  : 'text-foreground-muted hover:text-foreground-secondary hover:bg-background-secondary'
+                  : 'text-foreground-muted hover:text-foreground-secondary hover:bg-background-secondary',
               )}
               title={
                 rightSidebarOpen
@@ -244,13 +299,23 @@ export const DashboardPage: React.FC = () => {
           <AnimatePresence>
             {rightSidebarOpen && (
               <motion.aside
-                initial={isMobile ? { x: '100%', opacity: 0 } : { width: 0, opacity: 0 }}
-                animate={isMobile ? { x: 0, opacity: 1 } : { width: 420, opacity: 1 }}
-                exit={isMobile ? { x: '100%', opacity: 0 } : { width: 0, opacity: 0 }}
+                initial={
+                  isMobile
+                    ? { x: '100%', opacity: 0 }
+                    : { width: 0, opacity: 0 }
+                }
+                animate={
+                  isMobile ? { x: 0, opacity: 1 } : { width: 420, opacity: 1 }
+                }
+                exit={
+                  isMobile
+                    ? { x: '100%', opacity: 0 }
+                    : { width: 0, opacity: 0 }
+                }
                 transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
                 className={cn(
-                  "bg-background border-l border-border flex flex-col shrink-0 overflow-hidden",
-                  isMobile && "fixed inset-0 z-40 w-full"
+                  'bg-background border-l border-border flex flex-col shrink-0 overflow-hidden',
+                  isMobile && 'fixed inset-0 z-40 w-full',
                 )}
               >
                 <div className="flex flex-col h-full w-full">
@@ -298,7 +363,7 @@ const NavIcon: React.FC<{
       'p-3 rounded-xl transition-all duration-300 group',
       active
         ? 'bg-accent/10 text-accent'
-        : 'text-foreground-muted hover:text-foreground-secondary hover:bg-sidebar-hover'
+        : 'text-foreground-muted hover:text-foreground-secondary hover:bg-sidebar-hover',
     )}
   >
     {icon}

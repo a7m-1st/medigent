@@ -13,7 +13,7 @@ import {
   FolderOpen,
   Image as ImageIcon,
   RefreshCw,
-  Trash2
+  Trash2,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -71,10 +71,12 @@ const getFileIcon = (filename: string) => {
 };
 
 // Group files by directory
-const groupFilesByDirectory = (files: ProjectFile[]): Record<string, ProjectFile[]> => {
+const groupFilesByDirectory = (
+  files: ProjectFile[],
+): Record<string, ProjectFile[]> => {
   const groups: Record<string, ProjectFile[]> = {};
 
-  files.forEach(file => {
+  files.forEach((file) => {
     // Normalize path separators
     const normalizedPath = file.path.replace(/\\/g, '/');
     const parts = normalizedPath.split('/');
@@ -94,7 +96,7 @@ const groupFilesByDirectory = (files: ProjectFile[]): Record<string, ProjectFile
 // Format directory name for display, using task's user prompt if available
 const formatDirectoryName = (
   dir: string,
-  messages: { id: string; role: string; content: string }[]
+  messages: { id: string; role: string; content: string }[],
 ): string => {
   if (!dir) return 'Root';
 
@@ -115,7 +117,7 @@ const formatDirectoryName = (
       // Find user message with matching timestamp in ID (e.g., "user-1771688301539")
       // Allow small difference (within 10ms) due to timing variations
       const taskTime = parseInt(taskTimestamp, 10);
-      const userMessage = messages.find(m => {
+      const userMessage = messages.find((m) => {
         if (m.role !== 'user') return false;
         const msgMatch = m.id.match(/^user-(\d+)$/);
         if (!msgMatch) return false;
@@ -141,7 +143,7 @@ export const FileOutputPanel: React.FC = () => {
   const { projects } = useProjectStore();
 
   // Get messages from current project
-  const currentProject = projects.find(p => p.id === currentProjectId);
+  const currentProject = projects.find((p) => p.id === currentProjectId);
   const projectMessages = currentProject?.messages || [];
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -149,7 +151,9 @@ export const FileOutputPanel: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<ProjectFile | null>(null);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'preview'>('list');
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
+    new Set(),
+  );
 
   const fetchFiles = async () => {
     if (!currentProjectId) {
@@ -162,7 +166,7 @@ export const FileOutputPanel: React.FC = () => {
 
     try {
       const response = await apiClient.get<ProjectFilesResponse>(
-        `/projects/${currentProjectId}/files`
+        `/projects/${currentProjectId}/files`,
       );
       setFiles(response.data.files);
     } catch (err) {
@@ -179,18 +183,18 @@ export const FileOutputPanel: React.FC = () => {
 
   const handleViewFile = async (file: ProjectFile) => {
     if (!currentProjectId) return;
-    
+
     setSelectedFile(file);
     setViewMode('preview');
-    
+
     const ext = file.name.split('.').pop()?.toLowerCase();
     const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'];
-    
+
     if (imageExts.includes(ext || '')) {
       try {
         const response = await apiClient.get(
           `/projects/${currentProjectId}/files/${encodeURIComponent(file.path)}`,
-          { responseType: 'blob' }
+          { responseType: 'blob' },
         );
         const url = URL.createObjectURL(response.data);
         setFileContent(url);
@@ -202,7 +206,7 @@ export const FileOutputPanel: React.FC = () => {
       try {
         const response = await apiClient.get(
           `/projects/${currentProjectId}/files/${encodeURIComponent(file.path)}`,
-          { responseType: 'text' }
+          { responseType: 'text' },
         );
         setFileContent(response.data);
       } catch (err) {
@@ -216,13 +220,13 @@ export const FileOutputPanel: React.FC = () => {
 
   const handleDownload = async (file: ProjectFile) => {
     if (!currentProjectId) return;
-    
+
     try {
       const response = await apiClient.get(
         `/projects/${currentProjectId}/files/${encodeURIComponent(file.path)}`,
-        { responseType: 'blob' }
+        { responseType: 'blob' },
       );
-      
+
       const url = URL.createObjectURL(response.data);
       const a = document.createElement('a');
       a.href = url;
@@ -238,13 +242,13 @@ export const FileOutputPanel: React.FC = () => {
 
   const handleDelete = async (file: ProjectFile) => {
     if (!currentProjectId) return;
-    
+
     const confirmed = window.confirm(`Delete "${file.name}"?`);
     if (!confirmed) return;
-    
+
     try {
       await apiClient.delete(
-        `/projects/${currentProjectId}/files/${encodeURIComponent(file.path)}`
+        `/projects/${currentProjectId}/files/${encodeURIComponent(file.path)}`,
       );
       // Refresh file list
       fetchFiles();
@@ -260,9 +264,14 @@ export const FileOutputPanel: React.FC = () => {
 
   if (!currentProjectId) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-foreground-muted p-4">
-        <FolderOpen className="w-12 h-12 mb-2 opacity-50" />
-        <p className="text-sm">No project selected</p>
+      <div className="flex flex-col items-center justify-center py-23 text-center px-4">
+        <div className="w-12 h-12 rounded-full bg-background-secondary border border-border flex items-center justify-center mb-4">
+          <FolderOpen className="w-6 h-6 text-foreground-muted" />
+        </div>
+        <p className="text-foreground font-medium text-sm">No files output</p>
+        <p className="text-foreground-muted text-xs mt-1">
+          Files generated from completed tasks will appear here.
+        </p>
       </div>
     );
   }
@@ -273,14 +282,16 @@ export const FileOutputPanel: React.FC = () => {
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium">Project Files</h3>
-          <span className="text-xs text-foreground-muted">({files.length})</span>
+          <span className="text-xs text-foreground-muted">
+            ({files.length})
+          </span>
         </div>
         <button
           onClick={fetchFiles}
           disabled={loading}
           className={cn(
-            "p-1.5 rounded hover:bg-background-secondary transition-colors",
-            loading && "animate-spin"
+            'p-1.5 rounded hover:bg-background-secondary transition-colors',
+            loading && 'animate-spin',
           )}
           title="Refresh"
         >
@@ -291,10 +302,12 @@ export const FileOutputPanel: React.FC = () => {
       {/* Content */}
       <div className="flex-1 overflow-hidden flex">
         {/* File List */}
-        <div className={cn(
-          "overflow-y-auto",
-          viewMode === 'preview' && selectedFile ? "hidden" : "w-full"
-        )}>
+        <div
+          className={cn(
+            'overflow-y-auto',
+            viewMode === 'preview' && selectedFile ? 'hidden' : 'w-full',
+          )}
+        >
           {loading && files.length === 0 ? (
             <div className="flex items-center justify-center h-32">
               <RefreshCw className="w-5 h-5 animate-spin text-foreground-muted" />
@@ -307,159 +320,179 @@ export const FileOutputPanel: React.FC = () => {
               </button>
             </div>
           ) : files.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-32 text-sm text-foreground-muted">
-              <File className="w-8 h-8 mb-2 opacity-50" />
-              <p>No files generated yet</p>
+            <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+              <div className="w-12 h-12 rounded-full bg-background-secondary border border-border flex items-center justify-center mb-4">
+                <File className="w-6 h-6 text-foreground-muted" />
+              </div>
+              <p className="text-foreground font-medium text-sm">
+                No files output
+              </p>
+              <p className="text-foreground-muted text-xs mt-1">
+                Files generated from completed tasks will appear here.
+              </p>
             </div>
-          ) : (() => {
-            const groupedFiles = groupFilesByDirectory(files);
-            const directories = Object.keys(groupedFiles);
-            const hasMultipleDirs = directories.filter(d => d !== '').length > 1;
+          ) : (
+            (() => {
+              const groupedFiles = groupFilesByDirectory(files);
+              const directories = Object.keys(groupedFiles);
+              const hasMultipleDirs =
+                directories.filter((d) => d !== '').length > 1;
 
-            // If all files are in a single directory (or no directory), show flat list
-            if (!hasMultipleDirs) {
+              // If all files are in a single directory (or no directory), show flat list
+              if (!hasMultipleDirs) {
+                return (
+                  <div className="divide-y divide-border">
+                    {files.map((file) => {
+                      const Icon = getFileIcon(file.name);
+                      return (
+                        <div
+                          key={file.path}
+                          className={cn(
+                            'flex items-center gap-2 px-3 py-2 hover:bg-background-secondary cursor-pointer',
+                            selectedFile?.path === file.path &&
+                              'bg-background-secondary',
+                          )}
+                          onClick={() => handleViewFile(file)}
+                        >
+                          <Icon className="w-4 h-4 text-foreground-muted shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm truncate">{file.name}</p>
+                            <p className="text-xs text-foreground-muted">
+                              {formatFileSize(file.size)} •{' '}
+                              {formatDate(file.created_at)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownload(file);
+                              }}
+                              className="p-1 rounded hover:bg-background text-foreground-muted hover:text-foreground"
+                              title="Download"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete(file);
+                              }}
+                              className="p-1 rounded hover:bg-background text-foreground-muted hover:text-red-500"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              }
+
+              // Multiple directories - show nested folders
               return (
                 <div className="divide-y divide-border">
-                  {files.map((file) => {
-                    const Icon = getFileIcon(file.name);
+                  {directories.sort().map((dir) => {
+                    const dirFiles = groupedFiles[dir];
+                    const isExpanded = expandedFolders.has(dir);
+
                     return (
-                      <div
-                        key={file.path}
-                        className={cn(
-                          "flex items-center gap-2 px-3 py-2 hover:bg-background-secondary cursor-pointer",
-                          selectedFile?.path === file.path && "bg-background-secondary"
+                      <div key={dir || 'root'}>
+                        {/* Folder header */}
+                        <div
+                          className="flex items-center gap-2 px-3 py-2 hover:bg-background-secondary cursor-pointer bg-background-secondary/50"
+                          onClick={() => {
+                            setExpandedFolders((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(dir)) {
+                                next.delete(dir);
+                              } else {
+                                next.add(dir);
+                              }
+                              return next;
+                            });
+                          }}
+                        >
+                          <ChevronRight
+                            className={cn(
+                              'w-4 h-4 text-foreground-muted transition-transform',
+                              isExpanded && 'rotate-90',
+                            )}
+                          />
+                          {isExpanded ? (
+                            <FolderOpen className="w-4 h-4 text-amber-500" />
+                          ) : (
+                            <Folder className="w-4 h-4 text-amber-500" />
+                          )}
+                          <span className="text-sm font-medium">
+                            {formatDirectoryName(dir, projectMessages)}
+                          </span>
+                          <span className="text-xs text-foreground-muted">
+                            ({dirFiles.length})
+                          </span>
+                        </div>
+
+                        {/* Files in folder */}
+                        {isExpanded && (
+                          <div className="bg-background/50">
+                            {dirFiles.map((file) => {
+                              const Icon = getFileIcon(file.name);
+                              return (
+                                <div
+                                  key={file.path}
+                                  className={cn(
+                                    'flex items-center gap-2 px-3 py-2 pl-10 hover:bg-background-secondary cursor-pointer',
+                                    selectedFile?.path === file.path &&
+                                      'bg-background-secondary',
+                                  )}
+                                  onClick={() => handleViewFile(file)}
+                                >
+                                  <Icon className="w-4 h-4 text-foreground-muted shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm truncate">
+                                      {file.name}
+                                    </p>
+                                    <p className="text-xs text-foreground-muted">
+                                      {formatFileSize(file.size)} •{' '}
+                                      {formatDate(file.created_at)}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDownload(file);
+                                      }}
+                                      className="p-1 rounded hover:bg-background text-foreground-muted hover:text-foreground"
+                                      title="Download"
+                                    >
+                                      <Download className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDelete(file);
+                                      }}
+                                      className="p-1 rounded hover:bg-background text-foreground-muted hover:text-red-500"
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
                         )}
-                        onClick={() => handleViewFile(file)}
-                      >
-                        <Icon className="w-4 h-4 text-foreground-muted shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm truncate">{file.name}</p>
-                          <p className="text-xs text-foreground-muted">
-                            {formatFileSize(file.size)} • {formatDate(file.created_at)}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDownload(file);
-                            }}
-                            className="p-1 rounded hover:bg-background text-foreground-muted hover:text-foreground"
-                            title="Download"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDelete(file);
-                            }}
-                            className="p-1 rounded hover:bg-background text-foreground-muted hover:text-red-500"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
                       </div>
                     );
                   })}
                 </div>
               );
-            }
-
-            // Multiple directories - show nested folders
-            return (
-              <div className="divide-y divide-border">
-                {directories.sort().map((dir) => {
-                  const dirFiles = groupedFiles[dir];
-                  const isExpanded = expandedFolders.has(dir);
-
-                  return (
-                    <div key={dir || 'root'}>
-                      {/* Folder header */}
-                      <div
-                        className="flex items-center gap-2 px-3 py-2 hover:bg-background-secondary cursor-pointer bg-background-secondary/50"
-                        onClick={() => {
-                          setExpandedFolders(prev => {
-                            const next = new Set(prev);
-                            if (next.has(dir)) {
-                              next.delete(dir);
-                            } else {
-                              next.add(dir);
-                            }
-                            return next;
-                          });
-                        }}
-                      >
-                        <ChevronRight
-                          className={cn(
-                            "w-4 h-4 text-foreground-muted transition-transform",
-                            isExpanded && "rotate-90"
-                          )}
-                        />
-                        {isExpanded ? (
-                          <FolderOpen className="w-4 h-4 text-amber-500" />
-                        ) : (
-                          <Folder className="w-4 h-4 text-amber-500" />
-                        )}
-                        <span className="text-sm font-medium">{formatDirectoryName(dir, projectMessages)}</span>
-                        <span className="text-xs text-foreground-muted">({dirFiles.length})</span>
-                      </div>
-
-                      {/* Files in folder */}
-                      {isExpanded && (
-                        <div className="bg-background/50">
-                          {dirFiles.map((file) => {
-                            const Icon = getFileIcon(file.name);
-                            return (
-                              <div
-                                key={file.path}
-                                className={cn(
-                                  "flex items-center gap-2 px-3 py-2 pl-10 hover:bg-background-secondary cursor-pointer",
-                                  selectedFile?.path === file.path && "bg-background-secondary"
-                                )}
-                                onClick={() => handleViewFile(file)}
-                              >
-                                <Icon className="w-4 h-4 text-foreground-muted shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm truncate">{file.name}</p>
-                                  <p className="text-xs text-foreground-muted">
-                                    {formatFileSize(file.size)} • {formatDate(file.created_at)}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDownload(file);
-                                    }}
-                                    className="p-1 rounded hover:bg-background text-foreground-muted hover:text-foreground"
-                                    title="Download"
-                                  >
-                                    <Download className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDelete(file);
-                                    }}
-                                    className="p-1 rounded hover:bg-background text-foreground-muted hover:text-red-500"
-                                    title="Delete"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
+            })()
+          )}
         </div>
 
         {/* File Preview */}
@@ -481,7 +514,9 @@ export const FileOutputPanel: React.FC = () => {
                 >
                   <ChevronRight className="w-4 h-4 rotate-180" />
                 </button>
-                <span className="text-sm font-medium truncate">{selectedFile.name}</span>
+                <span className="text-sm font-medium truncate">
+                  {selectedFile.name}
+                </span>
               </div>
               <div className="flex items-center gap-1">
                 <button
@@ -494,10 +529,11 @@ export const FileOutputPanel: React.FC = () => {
               </div>
             </div>
             <div className="flex-1 overflow-auto p-3 bg-background">
-              {selectedFile.name.match(/\.(jpg|jpeg|png|gif|svg|webp)$/i) && fileContent ? (
-                <img 
-                  src={fileContent} 
-                  alt={selectedFile.name} 
+              {selectedFile.name.match(/\.(jpg|jpeg|png|gif|svg|webp)$/i) &&
+              fileContent ? (
+                <img
+                  src={fileContent}
+                  alt={selectedFile.name}
                   className="max-w-full h-auto"
                 />
               ) : selectedFile.name.match(/\.md$/i) && fileContent ? (
