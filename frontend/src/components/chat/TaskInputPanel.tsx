@@ -5,7 +5,6 @@ import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { AnimatePresence, motion } from 'framer-motion';
-import { toast } from 'sonner';
 import {
   AlertTriangle,
   Camera,
@@ -18,6 +17,7 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB limit
 
@@ -116,7 +116,8 @@ export const TaskInputPanel: React.FC = () => {
     (isStreaming || isLoading) && !wasStopped && !waitingForHumanReply;
   const hasText = message.trim().length > 0;
   const hasContent = hasText || attachments.length > 0;
-  const canSend = hasContent && (!isProcessing || waitingForHumanReply) && hasText;
+  const canSend =
+    hasContent && (!isProcessing || waitingForHumanReply) && hasText;
 
   // Project-aware: check if there are prior persisted messages for the disclaimer
   const currentProjectId = useChatStore((state) => state.currentProjectId);
@@ -490,8 +491,6 @@ export const TaskInputPanel: React.FC = () => {
         )}
       </AnimatePresence>
 
-
-
       {/* Input Area */}
       <div className="flex-1 flex items-center gap-3 p-4 relative">
         {/* File input for desktop and Files option */}
@@ -597,9 +596,10 @@ export const TaskInputPanel: React.FC = () => {
                 : 'Enter your task or question...'
             }
             className={cn(
-              'w-full bg-input border border-input-border rounded-xl px-4 py-3',
+              'w-full bg-input border border-input-border rounded-xl px-4 py-2.5',
               'text-foreground placeholder:text-foreground-muted',
               'focus:outline-none transition-colors resize-none overflow-y-auto',
+              'scrollbar-hide',
               'min-h-[48px] max-h-[130px]',
               waitingForHumanReply
                 ? 'border-amber-500/40 focus:border-amber-500 placeholder:text-amber-500/60'

@@ -526,30 +526,6 @@ export const FileOutputPanel: React.FC = () => {
                 >
                   <Download className="w-4 h-4" />
                 </button>
-                <button
-                  onClick={() => {
-                    setViewMode('list');
-                    setSelectedFile(null);
-                    if (fileContent?.startsWith('blob:')) {
-                      URL.revokeObjectURL(fileContent);
-                    }
-                    setFileContent(null);
-                  }}
-                  className="p-1 rounded hover:bg-background text-foreground-muted hover:text-foreground"
-                  title="Back to files"
-                >
-                  <ChevronRight className="w-4 h-4 rotate-180" />
-                </button>
-                <span className="text-sm font-medium truncate">{selectedFile.name}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => handleDownload(selectedFile)}
-                  className="p-1 rounded hover:bg-background"
-                  title="Download"
-                >
-                  <Download className="w-4 h-4" />
-                </button>
               </div>
             </div>
             <div className="flex-1 overflow-auto p-3 bg-background">
