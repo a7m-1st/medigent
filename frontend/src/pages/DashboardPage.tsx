@@ -229,7 +229,7 @@ export const DashboardPage: React.FC = () => {
               }}
               className="text-sm font-bold tracking-tight text-foreground-secondary hover:text-accent transition-colors"
             >
-              MedCrew
+              Medigent
             </button>
             <div className="h-4 w-px bg-border hidden sm:block" />
             <div className="hidden sm:flex items-center gap-2">

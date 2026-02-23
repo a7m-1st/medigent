@@ -103,7 +103,7 @@ export const MobileMenuPage: React.FC = () => {
         <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center mr-3">
           <LayoutDashboard className="w-5 h-5 text-accent-foreground" />
         </div>
-        <h1 className="text-lg font-semibold">MedCrew</h1>
+        <h1 className="text-lg font-semibold">Medigent</h1>
       </header>
 
       {/* Menu Items - Scrollable */}

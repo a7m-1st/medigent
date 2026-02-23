@@ -219,7 +219,7 @@ export function useSSEHandler(options: SSEHandlerOptions = {}) {
           : data.message.slice(0, 80);
         useProjectStore.getState().updateProject(projectId, { title });
         // Update HTML title
-        document.title = `MedCrew | ${title}`;
+        document.title = `Medigent | ${title}`;
       }
     }
   }
