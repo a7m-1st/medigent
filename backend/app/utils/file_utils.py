@@ -12,7 +12,7 @@ from app.model.chat import Chat
 
 logger = logging.getLogger("file_utils")
 
-MAX_FILE_SIZE = 2 * 1024 * 1024  # 2MB limit
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB limit
 
 
 def get_working_directory(options: Chat, task_lock=None) -> str:

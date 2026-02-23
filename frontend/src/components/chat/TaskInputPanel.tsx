@@ -19,7 +19,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
-const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB limit
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB limit
 
 // Default model configuration from environment variables
 const DEFAULT_MODEL_PLATFORM =
