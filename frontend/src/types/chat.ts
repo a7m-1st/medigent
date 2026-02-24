@@ -42,10 +42,11 @@ export const ChatMessageSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
   task_id: z.string().optional(),
   // Attachments: images and files (PDFs) as base64 data URLs
-  images: z.array(z.string()).optional(),
+  // Note: 'data' field is optional and not persisted to localStorage (removed in projectStore partialize)
   files: z.array(z.object({
-    data: z.string(),
+    data: z.string().optional(),
     name: z.string(),
+    type: z.enum(['image', 'pdf', 'other']),
   })).optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;

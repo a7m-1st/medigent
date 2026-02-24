@@ -267,19 +267,17 @@ export const TaskInputPanel: React.FC = () => {
       setAttachments([]);
 
       // Add user message to chat immediately and persist to project
+      // files[] contains: {data, name, type} - data is stripped in projectStore for localStorage
       const userMsg: import('@/types').ChatMessage = {
         id: `user-${Date.now()}`,
         role: 'user',
         content: currentMessage,
         timestamp: new Date().toISOString(),
-        images:
-          currentAttachments
-            .filter((a) => a.type === 'image')
-            .map((a) => a.data) || undefined,
-        files:
-          currentAttachments
-            .filter((a) => a.type === 'pdf')
-            .map((a) => ({ data: a.data, name: a.name })) || undefined,
+        files: currentAttachments.map((a) => ({
+          data: a.data,
+          name: a.name,
+          type: a.type as 'image' | 'pdf' | 'other',
+        })) || undefined,
       };
       useChatStore.getState().addMessage(userMsg);
       const pid = useChatStore.getState().currentProjectId;
@@ -322,19 +320,17 @@ export const TaskInputPanel: React.FC = () => {
       setAttachments([]);
 
       // Add user message to chat immediately (with attachments) and persist to project
+      // files[] contains: {data, name, type} - data is stripped in projectStore for localStorage
       const userMsg: import('@/types').ChatMessage = {
         id: `user-${Date.now()}`,
         role: 'user',
         content: currentMessage,
         timestamp: new Date().toISOString(),
-        images:
-          currentAttachments
-            .filter((a) => a.type === 'image')
-            .map((a) => a.data) || undefined,
-        files:
-          currentAttachments
-            .filter((a) => a.type === 'pdf')
-            .map((a) => ({ data: a.data, name: a.name })) || undefined,
+        files: currentAttachments.map((a) => ({
+          data: a.data,
+          name: a.name,
+          type: a.type as 'image' | 'pdf' | 'other',
+        })) || undefined,
       };
       useChatStore.getState().addMessage(userMsg);
       const existingProjectId = useChatStore.getState().currentProjectId;

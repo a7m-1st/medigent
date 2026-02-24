@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import { AlertCircle, Bot, CheckCircle2, FileText, Info, User } from 'lucide-react';
+import { AlertCircle, Bot, CheckCircle2, FileText, ImageIcon, Info, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChatMessage } from '@/types';
 
@@ -10,7 +10,7 @@ interface MessageBubbleProps {
 }
 
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
-  const { role, content, images, files } = message;
+  const { role, content, files } = message;
 
   // System messages render as centered info pills
   if (role === 'system') {
@@ -65,35 +65,46 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
         {/* Message bubble */}
         {isUser ? (
           <div className="bg-user-bubble border border-user-bubble-border rounded-2xl rounded-tr-sm px-4 py-3 text-sm text-foreground leading-relaxed shadow-sm">
-            {/* Attached images */}
-            {images && images.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-2">
-                {images.map((img, idx) => (
-                  <div
-                    key={idx}
-                    className="relative w-20 h-20 rounded-lg overflow-hidden border border-border bg-background-secondary"
-                  >
-                    <img
-                      src={img}
-                      alt={`Attachment ${idx + 1}`}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-            {/* Attached files (PDFs) */}
+            {/* Attachments */}
             {files && files.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-2">
                 {files.map((file, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background-secondary"
+                    className="relative w-20 h-20 rounded-lg overflow-hidden border border-border bg-background-secondary flex flex-col items-center justify-center gap-1"
                   >
-                    <FileText className="w-5 h-5 text-red-500 shrink-0" />
-                    <span className="text-xs text-foreground-secondary truncate max-w-[120px]">
-                      {file.name}
-                    </span>
+                    {file.data && file.type === 'image' ? (
+                      // Image with base64 data - show actual image
+                      <img
+                        src={file.data}
+                        alt={file.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : file.type === 'pdf' ? (
+                      // PDF (with or without data) - show PDF placeholder
+                      <>
+                        <FileText className="w-6 h-6 text-red-500" />
+                        <span className="text-[8px] text-foreground-muted text-center px-1 truncate w-full">
+                          {file.name}
+                        </span>
+                      </>
+                    ) : file.type === 'image' ? (
+                      // Image without data - show image placeholder
+                      <>
+                        <ImageIcon className="w-6 h-6 text-foreground-muted" />
+                        <span className="text-[8px] text-foreground-muted text-center px-1 truncate w-full">
+                          {file.name}
+                        </span>
+                      </>
+                    ) : (
+                      // Other type - show generic placeholder
+                      <>
+                        <FileText className="w-6 h-6 text-foreground-muted" />
+                        <span className="text-[8px] text-foreground-muted text-center px-1 truncate w-full">
+                          {file.name}
+                        </span>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>

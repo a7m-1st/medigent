@@ -120,6 +120,63 @@ export function useChat(): UseChatReturn {
     };
   }, []); // Empty deps - only run on unmount
 
+  // Cut the WebSocket connection when the API config changes (key saved/cleared)
+  // so the next chat session uses the updated credentials.
+  useEffect(() => {
+    let prev = {
+      key: useApiConfigStore.getState().geminiApiKey,
+      url: useApiConfigStore.getState().medgemmaHostUrl,
+      model: useApiConfigStore.getState().medgemmaModelType,
+    };
+    const unsub = useApiConfigStore.subscribe((state) => {
+      const cur = {
+        key: state.geminiApiKey,
+        url: state.medgemmaHostUrl,
+        model: state.medgemmaModelType,
+      };
+      if (
+        cur.key !== prev.key ||
+        cur.url !== prev.url ||
+        cur.model !== prev.model
+      ) {
+        prev = cur;
+        if (wsRef.current) {
+          console.log('[useChat] API config changed — stopping session');
+
+          // Mirror stopChat UI updates so the frontend looks like the user
+          // pressed stop.
+          store.setWasStopped(true);
+          store.setStreaming(false);
+          store.setConnected(false);
+          store.setWaitingForHumanReply(false, null);
+
+          taskDecompStore.cancelPendingTasks();
+
+          const agents = agentStatusStore.agents;
+          for (const name of Object.keys(agents)) {
+            const agent = agents[name];
+            if (agent && agent.state === 'working') {
+              agentStatusStore.setAgentCompleted(
+                name,
+                agent.knownIds[0] || '',
+                'API config changed',
+                0,
+              );
+            }
+          }
+
+          // Send stop before disconnecting so backend can clean up
+          if (wsRef.current.getState().isConnected) {
+            wsRef.current.send('stop', {});
+          }
+
+          cleanupWS();
+        }
+      }
+    });
+    return unsub;
+  }, [cleanupWS, store, taskDecompStore, agentStatusStore]);
+
   /**
    * Ensure a WebSocket connection is open.  If one already exists and is
    * connected, reuse it.  Otherwise create a new one.  Returns the
@@ -345,6 +402,19 @@ export function useChat(): UseChatReturn {
         projectStore.addMessageToProject(newProjectId, latestUserMsg);
       }
 
+      // Clean history: remove files without data (placeholders from localStorage)
+      // Also remove the files property entirely if no files remain
+      const cleanedHistory = (history || []).map(msg => {
+        const validFiles = msg.files?.filter(f => f.data);
+        const cleanedMsg = { ...msg };
+        if (validFiles && validFiles.length > 0) {
+          cleanedMsg.files = validFiles;
+        } else {
+          delete (cleanedMsg as { files?: unknown }).files;
+        }
+        return cleanedMsg;
+      });
+
       const chatData: Chat = {
         task_id: newTaskId,
         project_id: newProjectId,
@@ -360,7 +430,7 @@ export function useChat(): UseChatReturn {
         summary_prompt: config?.summary_prompt || '',
         use_simulated_tool_calling: false,
         secondary_agent: secondaryAgent ?? null,
-        history: history || [],
+        history: cleanedHistory,
       };
 
       // Connect the MCP proxy bridge if any servers use local proxy.
@@ -401,6 +471,7 @@ export function useChat(): UseChatReturn {
       store.setWasStopped(true);
       store.setStreaming(false);
       store.setConnected(false);
+      store.setWaitingForHumanReply(false, null);
       store.setLoading(true);
 
       // Cancel all pending/running tasks in the task tree

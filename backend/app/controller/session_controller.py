@@ -78,11 +78,11 @@ async def websocket_chat(ws: WebSocket):
     options: Chat | None = None
 
     async def _delayed_disconnect_cleanup(lock: TaskLock):
-        """Wait 30 seconds after disconnect, then stop workforce and delete cache."""
+        """Wait 5 seconds after disconnect, then stop workforce and delete cache."""
         try:
-            await asyncio.sleep(30)
+            await asyncio.sleep(5)
             session_logger.warning(
-                "[WS] Disconnect timeout reached (30s), stopping workforce",
+                "[WS] Disconnect timeout reached (5s), stopping workforce",
                 extra={"project_id": lock.id}
             )
             # Stop the workforce and cleanup
@@ -426,7 +426,7 @@ async def websocket_chat(ws: WebSocket):
             except (asyncio.CancelledError, Exception):
                 pass
 
-        # Schedule delayed cleanup (30s) - stop workforce and delete cache if not reconnected
+        # Schedule delayed cleanup (5s) - stop workforce and delete cache if not reconnected
         if task_lock is not None:
             task_lock.status = Status.done
             while not task_lock.queue.empty():
@@ -440,7 +440,7 @@ async def websocket_chat(ws: WebSocket):
                 _delayed_disconnect_cleanup(task_lock)
             )
             session_logger.info(
-                "[WS] Scheduled disconnect cleanup in 30s",
+                "[WS] Scheduled disconnect cleanup in 5s",
                 extra={"project_id": task_lock.id}
             )
 

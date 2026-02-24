@@ -50,12 +50,13 @@ export const DashboardPage: React.FC = () => {
   const [isMobile, setIsMobile] = useState(false);
   const prevIsMobile = useRef<boolean | null>(null);
   const { theme, setTheme, resolvedTheme } = useUIStore();
-  const { isConfigured, checkBackendConfig } = useApiConfigStore();
+  const { isConfigured, checkBackendConfig, loadFromStorage } = useApiConfigStore();
 
-  // Check backend config on mount
+  // Load API config from storage and check backend config on mount
   useEffect(() => {
+    loadFromStorage();
     checkBackendConfig();
-  }, [checkBackendConfig]);
+  }, [loadFromStorage, checkBackendConfig]);
 
   // Check URL params for panel open on mount
   useEffect(() => {

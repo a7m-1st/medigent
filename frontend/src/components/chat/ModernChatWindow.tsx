@@ -14,7 +14,7 @@ interface LocalMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
-  images?: string[];
+  files?: { data?: string; name: string; type: 'image' | 'pdf' | 'other' }[];
 }
 
 export const ModernChatWindow: React.FC = () => {
@@ -37,7 +37,7 @@ export const ModernChatWindow: React.FC = () => {
       role: m.role as 'user' | 'assistant' | 'system',
       content: m.content,
       timestamp: new Date(m.timestamp),
-      images: m.images,
+      files: m.files,
     }));
     setLocalMessages(converted);
   }, [storeMessages]);
@@ -58,12 +58,17 @@ export const ModernChatWindow: React.FC = () => {
     // Reset wasStopped flag at the start of a new send operation
     setWasStopped(false);
     
+    // Convert images to files structure for local display
+    const files = images.length > 0 
+      ? images.map(img => ({ data: img, name: 'Image', type: 'image' as const }))
+      : undefined;
+    
     const newMessage: LocalMessage = {
       id: Date.now().toString(),
       role: 'user',
       content: text,
       timestamp: new Date(),
-      images: images.length > 0 ? images : undefined
+      files
     };
     
     setLocalMessages(prev => [...prev, newMessage]);
@@ -78,13 +83,18 @@ export const ModernChatWindow: React.FC = () => {
   const handleSendHumanReply = async (agent: string, reply: string, attaches?: string[]) => {
     if (!currentAskAgent || !waitingForHumanReply) return;
 
+    // Convert attaches to files structure for local display
+    const files = attaches && attaches.length > 0
+      ? attaches.map(att => ({ data: att, name: 'Attachment', type: 'other' as const }))
+      : undefined;
+
     // Add the reply as a user message locally
     const newMessage: LocalMessage = {
       id: Date.now().toString(),
       role: 'user',
       content: reply,
       timestamp: new Date(),
-      images: attaches && attaches.length > 0 ? attaches : undefined,
+      files,
     };
 
     setLocalMessages(prev => [...prev, newMessage]);
@@ -206,30 +216,48 @@ const MessageItem: React.FC<{ message: LocalMessage; isStreaming?: boolean }> = 
           )}
         </div>
 
-        {message.images && message.images.length > 0 && (
+        {message.files && message.files.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-1">
-            {message.images.map((img, i) => {
-              const isPdf = img.startsWith('data:application/pdf');
-              if (isPdf) {
-                return (
-                  <div 
-                    key={i}
-                    className="w-32 h-32 flex flex-col items-center justify-center rounded-xl border border-white/5 shadow-lg bg-red-50"
-                  >
-                    <FileText className="w-10 h-10 text-red-500" />
-                    <span className="text-xs text-red-600 font-medium mt-1">PDF</span>
-                  </div>
-                );
-              }
-              return (
+            {message.files.map((file, i) => (
+              file.data && file.type === 'image' ? (
+                // Image with base64 data - show actual image
                 <img 
                   key={i} 
-                  src={img} 
-                  alt="attachment" 
+                  src={file.data} 
+                  alt={file.name}
                   className="w-32 h-32 object-cover rounded-xl border border-white/5 shadow-lg" 
                 />
-              );
-            })}
+              ) : file.type === 'pdf' ? (
+                // PDF (with or without data) - show PDF placeholder
+                <div 
+                  key={i}
+                  className="w-32 h-32 flex flex-col items-center justify-center rounded-xl border border-white/5 shadow-lg bg-zinc-900"
+                >
+                  <FileText className="w-10 h-10 text-red-500" />
+                  <span className="text-xs text-red-400 font-medium mt-1">{file.name}</span>
+                </div>
+              ) : file.type === 'image' ? (
+                // Image without data - show image placeholder
+                <div 
+                  key={i}
+                  className="w-32 h-32 flex flex-col items-center justify-center rounded-xl border border-white/5 shadow-lg bg-zinc-900"
+                >
+                  <div className="w-10 h-10 bg-zinc-700 rounded-lg flex items-center justify-center">
+                    <span className="text-zinc-400 text-xs">IMG</span>
+                  </div>
+                  <span className="text-xs text-zinc-400 font-medium mt-1">{file.name}</span>
+                </div>
+              ) : (
+                // Other type - show generic placeholder
+                <div 
+                  key={i}
+                  className="w-32 h-32 flex flex-col items-center justify-center rounded-xl border border-white/5 shadow-lg bg-zinc-900"
+                >
+                  <FileText className="w-10 h-10 text-zinc-400" />
+                  <span className="text-xs text-zinc-400 font-medium mt-1">{file.name}</span>
+                </div>
+              )
+            ))}
           </div>
         )}
 

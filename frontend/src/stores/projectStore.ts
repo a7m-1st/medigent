@@ -110,7 +110,19 @@ export const useProjectStore = create<ProjectState>()(
     {
       name: 'medgemma-projects',
       partialize: (state) => ({
-        projects: state.projects,
+        // Persist projects but remove base64 data from files to avoid localStorage quota issues
+        // Keep name and type fields for display purposes
+        projects: state.projects.map(project => ({
+          ...project,
+          messages: project.messages.map(message => ({
+            ...message,
+            files: message.files?.map(file => ({
+              name: file.name,
+              type: file.type,
+              // data field is intentionally removed - not persisted to localStorage
+            })) || undefined,
+          })),
+        })),
         currentProjectId: state.currentProjectId,
       }),
     }
