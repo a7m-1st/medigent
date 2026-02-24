@@ -1657,9 +1657,22 @@ the current date.
         try:
             mcp_sidecar = await mcp_agent(options)
         except Exception as e:
+            # Build a helpful diagnostic that includes the URL / command
+            # for each server so the user can spot typos or network issues.
+            server_details = []
+            for sn in server_names:
+                scfg = mcp_servers.get(sn, {})
+                if "url" in scfg:
+                    server_details.append(f"  {sn}: url={scfg['url']}")
+                elif "command" in scfg:
+                    server_details.append(f"  {sn}: command={scfg['command']}")
+                else:
+                    server_details.append(f"  {sn}: (no url or command)")
+            detail_block = "\n".join(server_details)
             raise RuntimeError(
                 f"Failed to connect to MCP server(s) "
                 f"{', '.join(server_names)}: {e}\n\n"
+                f"Server details:\n{detail_block}\n\n"
                 f"Please remove or fix the MCP server configuration and try again."
             ) from e
         workforce.add_single_agent_worker(

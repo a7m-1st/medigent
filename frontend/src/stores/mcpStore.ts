@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
+import { persist } from 'zustand/middleware';
 
 const MCP_CONFIG_KEY = 'medgemma_mcp_config';
 
@@ -24,64 +25,49 @@ interface McpState {
   getInstalledMcp: () => { mcpServers: Record<string, McpServerConfig> };
 }
 
-function persistToStorage(servers: Record<string, McpServerConfig>) {
-  try {
-    localStorage.setItem(MCP_CONFIG_KEY, JSON.stringify(servers));
-  } catch (e) {
-    console.error('Failed to save MCP config to localStorage:', e);
-  }
-}
-
 export const useMcpStore = create<McpState>()(
-  immer((set, get) => ({
-    servers: {},
-    isDialogOpen: false,
+  persist(
+    immer((set, get) => ({
+      servers: {},
+      isDialogOpen: false,
 
-    addServer: (name, config) => {
-      set((state) => {
-        state.servers[name] = config;
-      });
-      persistToStorage(get().servers);
-    },
+      addServer: (name, config) => {
+        set((state) => {
+          state.servers[name] = config;
+        });
+      },
 
-    removeServer: (name) => {
-      set((state) => {
-        delete state.servers[name];
-      });
-      persistToStorage(get().servers);
-    },
+      removeServer: (name) => {
+        set((state) => {
+          delete state.servers[name];
+        });
+      },
 
-    updateServer: (name, config) => {
-      set((state) => {
-        state.servers[name] = config;
-      });
-      persistToStorage(get().servers);
-    },
+      updateServer: (name, config) => {
+        set((state) => {
+          state.servers[name] = config;
+        });
+      },
 
-    setDialogOpen: (open) => {
-      set((state) => {
-        state.isDialogOpen = open;
-      });
-    },
+      setDialogOpen: (open) => {
+        set((state) => {
+          state.isDialogOpen = open;
+        });
+      },
 
-    loadFromStorage: () => {
-      try {
-        const stored = localStorage.getItem(MCP_CONFIG_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            set((state) => {
-              state.servers = parsed;
-            });
-          }
-        }
-      } catch (e) {
-        console.error('Failed to load MCP config from localStorage:', e);
-      }
-    },
+      loadFromStorage: () => {
+        // No longer needed - persist middleware handles this automatically
+      },
 
-    getInstalledMcp: () => {
-      return { mcpServers: get().servers };
-    },
-  })),
+      getInstalledMcp: () => {
+        return { mcpServers: JSON.parse(JSON.stringify(get().servers)) };
+      },
+    })),
+    {
+      name: MCP_CONFIG_KEY,
+      partialize: (state) => ({
+        servers: JSON.parse(JSON.stringify(state.servers)),
+      }),
+    }
+  )
 );

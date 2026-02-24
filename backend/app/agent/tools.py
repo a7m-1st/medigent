@@ -1,8 +1,8 @@
 
 
 import asyncio
+import copy
 import logging
-import os
 
 from camel.toolkits import MCPToolkit
 
@@ -15,7 +15,6 @@ from app.agent.toolkit.pubmed_toolkit import PubMedToolkit
 from app.agent.toolkit.search_toolkit import SearchToolkit
 from app.agent.toolkit.terminal_toolkit import TerminalToolkit
 from app.agent.toolkit.video_analysis_toolkit import VideoAnalysisToolkit
-from app.component.environment import env
 from app.model.chat import McpServers
 from app.agent.toolkit.abstract_toolkit import AbstractToolkit
 
@@ -68,22 +67,13 @@ async def get_mcp_tools(mcp_server: McpServers):
     if len(mcp_server["mcpServers"]) == 0:
         return []
 
-    # Build a mutable copy of the config dict.
+    # Build a DEEP copy of the config dict so mutations (timeout
+    # injection by MCPToolkit, env injection below) never leak back
+    # into the caller's ``options.installed_mcp``.
     # For STDIO servers (command-based), ensure a unified auth directory
     # so mcp-remote doesn't re-authenticate on each task.
     # For URL-based (remote) servers, skip env injection — it's unused.
-    config_dict = {**mcp_server}
-    for server_config in config_dict["mcpServers"].values():
-        is_remote = "url" in server_config
-        if not is_remote:
-            if "env" not in server_config:
-                server_config["env"] = {}
-            if "MCP_REMOTE_CONFIG_DIR" not in server_config["env"]:
-                server_config["env"]["MCP_REMOTE_CONFIG_DIR"] = env(
-                    "MCP_REMOTE_CONFIG_DIR",
-                    os.path.expanduser("~/.mcp-auth"),
-                )
-
+    config_dict = copy.deepcopy(mcp_server)
     mcp_toolkit = MCPToolkit(config_dict=config_dict, timeout=30)
     await mcp_toolkit.connect()
 

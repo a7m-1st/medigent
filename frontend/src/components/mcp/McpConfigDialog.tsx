@@ -16,22 +16,11 @@ import {
 } from '@/components/ui/select';
 import { useMcpStore, type McpServerConfig } from '@/stores/mcpStore';
 import { Plug, Plus, Trash2 } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 
 export const McpConfigDialog: React.FC = () => {
-  const {
-    servers,
-    isDialogOpen,
-    setDialogOpen,
-    addServer,
-    removeServer,
-    loadFromStorage,
-  } = useMcpStore();
-
-  // Load persisted MCP config on mount
-  useEffect(() => {
-    loadFromStorage();
-  }, [loadFromStorage]);
+  const { servers, isDialogOpen, setDialogOpen, addServer, removeServer } =
+    useMcpStore();
 
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
@@ -223,11 +212,12 @@ export const McpConfigDialog: React.FC = () => {
               />
               <Button
                 type="button"
-                variant="ghost"
+                variant={
+                  headerKey.trim() && headerValue.trim() ? 'default' : 'ghost'
+                }
                 size="icon"
-                className="w-8 h-8 shrink-0 text-foreground-muted hover:text-accent"
+                className="w-8 h-8 shrink-0"
                 onClick={handleAddHeader}
-                disabled={!headerKey.trim() || !headerValue.trim()}
               >
                 <Plus className="w-3.5 h-3.5" />
               </Button>

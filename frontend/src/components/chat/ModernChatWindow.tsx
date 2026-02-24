@@ -2,6 +2,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useChat } from '@/hooks/useChat';
 import { cn } from '@/lib/utils';
 import { useChatStore } from '@/stores/chatStore';
+import { useMcpStore } from '@/stores/mcpStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bot, FileText, Info, Sparkles, User } from 'lucide-react';
 import React, { useEffect, useRef } from 'react';
@@ -68,7 +69,10 @@ export const ModernChatWindow: React.FC = () => {
     setLocalMessages(prev => [...prev, newMessage]);
     
     // Use sendMessage which automatically detects whether to use continueChat (improve) or startChat
-    await sendMessage(text, images.length > 0 ? images : []);
+    // Always pass installed_mcp so MCP servers are forwarded on every turn
+    await sendMessage(text, images.length > 0 ? images : [], {
+      installed_mcp: useMcpStore.getState().getInstalledMcp(),
+    });
   };
 
   const handleSendHumanReply = async (agent: string, reply: string, attaches?: string[]) => {

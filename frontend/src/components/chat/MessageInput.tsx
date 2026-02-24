@@ -36,7 +36,7 @@ export function MessageInput() {
       api_key: '',
       api_url: DEFAULT_MODEL_API_URL,
       max_retries: 5,
-      installed_mcp: {},
+      installed_mcp: { mcpServers: {} },
       summary_prompt: '',
       use_simulated_tool_calling: false,
       history: [],
