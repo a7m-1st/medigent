@@ -56,7 +56,8 @@ export const DashboardPage: React.FC = () => {
   useEffect(() => {
     loadFromStorage();
     checkBackendConfig();
-  }, [loadFromStorage, checkBackendConfig]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Check URL params for panel open on mount
   useEffect(() => {

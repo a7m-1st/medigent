@@ -22,12 +22,14 @@ import { useNavigate } from 'react-router-dom';
 export const MobileMenuPage: React.FC = () => {
   const navigate = useNavigate();
   const { theme, setTheme, resolvedTheme } = useUIStore();
-  const { isConfigured, checkBackendConfig } = useApiConfigStore();
+  const { isConfigured, checkBackendConfig, loadFromStorage } = useApiConfigStore();
 
-  // Check backend config on mount
+  // Load API config from storage and check backend config on mount
   useEffect(() => {
+    loadFromStorage();
     checkBackendConfig();
-  }, [checkBackendConfig]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Cycle through themes: light -> dark -> system
   const cycleTheme = () => {

@@ -49,12 +49,14 @@ export const ProjectPage: React.FC = () => {
   const setChatCurrentProject = useChatStore((s) => s.setCurrentProject);
   const clearMessages = useChatStore((s) => s.clearMessages);
   const addMessage = useChatStore((s) => s.addMessage);
-  const { isConfigured, checkBackendConfig, setModalOpen } = useApiConfigStore();
+  const { isConfigured, checkBackendConfig, loadFromStorage, setModalOpen } = useApiConfigStore();
 
-  // Check backend config on mount
+  // Load API config from storage and check backend config on mount
   useEffect(() => {
+    loadFromStorage();
     checkBackendConfig();
-  }, [checkBackendConfig]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Check URL params for panel open on mount
   useEffect(() => {
