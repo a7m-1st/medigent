@@ -29,8 +29,11 @@ if _backend_env.exists():
     print(f"Loaded environment from {_backend_env}")
 
 # Start debugpy on port 5678
-debugpy.listen(("0.0.0.0", 5678))
-print("Debugpy listening on port 5678 - Attach your debugger now if needed")
+try:
+    debugpy.listen(("0.0.0.0", 5678))
+    print("Debugpy listening on port 5678 - Attach your debugger now if needed")
+except RuntimeError:
+    pass  # Port already in use (e.g. uvicorn reload spawned a new process)
 
 # Initialize FastAPI with title
 api = FastAPI(title="Eigent Multi-Agent System API")
