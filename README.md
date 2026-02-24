@@ -1,237 +1,114 @@
-# MedGemma Project
+# Medigent - Your Intelligent Partner for Medical Insights
 
-This project consists of a multi-agent system with a FastAPI backend and React frontend, integrated with the MedGemma AI model through vLLM.
+This project consists of a multi-agent system with a FastAPI backend and React frontend, integrated with the MedGemma AI model.
 
 ## Project Structure
 
 - `backend/` - FastAPI backend with multi-agent system
 - `frontend/` - React + TypeScript + Vite frontend
-- `model/` - vLLM service configuration for MedGemma model
-- `.opencode/` - Multi-agent configuration for specialized agents
+- `model/` - vLLM / llamacpp service configuration for MedGemma model
 
 ## Quick Start
 
 ### Prerequisites
 
 - Docker and Docker Compose
-- Python 3.11+ (for running backend without Docker)
-- Node.js 20+ (for running frontend without Docker)
+  OR Locally with:
+- Python 3.11 or 3.12
+- Node.js 20+
+- UV package manager
 - Hugging Face account and API token
 - (Optional) Cloudflare Tunnel token for external access
 
----
+### Running Locally (Development)
 
-## Running the Model Service (vLLM)
-
-The `model/` directory contains the vLLM service for running the MedGemma model.
-
-### Setup
-
-1. Navigate to the model directory:
-   ```bash
-   cd model
-   ```
-
-2. Copy the environment file and configure it:
-   ```bash
-   cp .env.example .env
-   ```
-
-3. Edit `.env` and add your tokens:
-   ```env
-   HF_TOKEN=your_huggingface_token_here
-   CF_TUNNEL_TOKEN=your_cloudflare_tunnel_token_here  # Optional
-   ```
-
-4. Create the models directory:
-   ```bash
-   mkdir -p models
-   ```
-
-### Start the vLLM Service
+#### 1. Frontend
 
 ```bash
-cd model
-docker-compose up -d
+cd frontend
+npm install
+npm run dev
 ```
 
-This will:
-- Download the `google/medgemma-4b-it` model (first run may take several minutes)
-- Start the vLLM server on port 8000
-- (Optional) Start Cloudflare tunnel for external access
-
-### Verify the Model Service
+#### 2. Backend
 
 ```bash
-curl http://localhost:8000/health
+cd backend
+uv sync
+uv run uvicorn app:api --host 0.0.0.0 --port 3001 --reload
 ```
 
-### Stop the Model Service
+### Running with Docker (Recommended for Production)
 
-```bash
-cd model
-docker-compose down
-```
+To run the full-stack application:
 
----
-
-## Running the Full Stack with Docker Compose
-
-To run the entire application (backend + frontend + model) together:
-
-### From the Root Directory
+**From the root directory**
 
 ```bash
 docker-compose up -d
 ```
 
 This builds and starts:
+
 - Frontend (built into static files)
 - Backend (FastAPI serving on port 8000)
 - Combined into a single container
 
-### Access the Application
+**Access the Application:** http://localhost:8000
 
-- Web UI: http://localhost:8000
-- Health Check: http://localhost:8000/health
+**NOTE:** By default, the agents use Gemini and Medigent team's hosted MedGemma API. To switch to local hardware (fully private/offline), view the **Setting Up Local Model** section.
 
-### Stop the Full Stack
+## Setting Up Local Model (Optional)
 
-```bash
-docker-compose down
-```
+_Use this option if you want to run the MedGemma model entirely on your own hardware rather than relying on external hosted servers for full data privacy and offline performance._
 
----
+1. Configure your HuggingFace token in `model/.env`:
 
-## Running the Backend Without Docker
+   ```
+   HF_TOKEN=your_token_here
+   ```
 
-If you prefer to run the backend directly without Docker:
+2. Run the weights download script:
 
-### Prerequisites
-
-- Python 3.11 or 3.12
-- UV package manager (recommended) or pip
-
-### Setup
-
-1. Navigate to the backend directory:
    ```bash
    cd backend
+   uv run python app/model/download_models.py
    ```
 
-2. Create a virtual environment and install dependencies using UV:
+   _This script fetches the base MedGemma GGUF and the required vision projector file._
+
+3. Once downloaded, you need to run the docker compose which will read the ./models directory
+
    ```bash
-   uv sync
+   cd model
+   docker-compose up -d
    ```
 
-### Start the Backend
+4. You need to configure the Medgemma model config in https://medigent.awelkaircodes.org or your locally hosted frontend. The model server will be available at `http://localhost:8080/v1`. You need to host the backend locally if you don't have a public domain, or configure Cloudflare tunnel to use it with our public website.
 
-Using UV:
-```bash
-cd backend
-uv run uvicorn app:api --host 0.0.0.0 --port 3001 --reload
-```
+## Security & Encryption
 
-Using Python directly:
-```bash
-cd backend
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uvicorn app:api --host 0.0.0.0 --port 3001 --reload
-```
+To protect sensitive agent credentials (like API keys), Medigent uses Fernet symmetric encryption. API keys are encrypted on the frontend before being sent to the backend, where they are decrypted for use.
 
-### Backend API Endpoints
+### Configuration Required
 
-- `GET /health` - Health check
-- `POST /chat` - Start a new chat session (SSE streaming)
-- `POST /chat/{project_id}` - Continue/improve chat
-- `POST /chat/{project_id}/human-reply` - Send human reply to agent
-- `DELETE /chat/{project_id}` - Stop chat session
-- `POST /model/validate` - Validate model configuration
-- `POST /task/{project_id}/start` - Start/resume task
-- `DELETE /task/stop-all` - Stop all tasks
+1. **Generate an encryption key:**
 
-### Development Mode
+   ```bash
+   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+   ```
 
-The backend runs with debugpy enabled on port 5678 for debugging.
+2. **Configure the backend:**
+   Add to `backend/.env`:
 
----
+   ```
+   ENCRYPTION_KEY=your_generated_key_here
+   ```
 
-## Running the Frontend Without Docker
+3. **Configure the frontend:**
+   Add to `frontend/.env.local`:
+   ```
+   VITE_ENCRYPTION_KEY=your_generated_key_here
+   ```
 
-To run the frontend in development mode:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-The frontend will be available at http://localhost:5173 (or another port if 5173 is in use).
-
----
-
-## Development Workflow
-
-Terminal 1 - Backend:
-```bash
-cd backend
-uv run uvicorn app:api --host 0.0.0.0 --port 3001 --reload
-```
-
-Terminal 2 - Frontend:
-```bash
-cd frontend
-npm run dev
-```
-
----
-
-## Testing
-
-Run the backend API tests:
-
-```bash
-cd backend
-python test_api.py
-```
-
-**Note:** Update the `API_KEY` in `test_api.py` before running tests.
-
----
-
-## Environment Variables
-
-### Model Service (`model/.env`)
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `HF_TOKEN` | Hugging Face API token | Yes |
-| `CF_TUNNEL_TOKEN` | Cloudflare Tunnel token | No |
-
----
-
-## Troubleshooting
-
-### Frontend Issues
-
-**Node modules issues:**
-```bash
-cd frontend
-rm -rf node_modules package-lock.json
-npm install
-```
-
----
-
-## Architecture
-
-- **Frontend**: React + TypeScript + Vite + Tailwind CSS
-- **Backend**: FastAPI + Python 3.11/3.12 + UV package manager
-- **AI Model**: MedGemma 4B (google/medgemma-4b-it) via vLLM
-- **Agents**: Multi-agent system using CAMEL-AI framework
-
----
-
-## License
-
-See [LICENSE](LICENSE) file for details.
+Make sure both keys match exactly.
