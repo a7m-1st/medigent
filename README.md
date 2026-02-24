@@ -84,7 +84,11 @@ _Use this option if you want to run the MedGemma model entirely on your own hard
    docker-compose up -d
    ```
 
-4. You need to configure the Medgemma model config in https://medigent.awelkaircodes.org or your locally hosted frontend. The model server will be available at `http://localhost:8080/v1`. You need to host the backend locally if you don't have a public domain, or configure Cloudflare tunnel to use it with our public website.
+4. You need to configure the Medgemma model config in https://medigent.awelkaircodes.org or your locally hosted frontend. The model server will be available at `http://localhost:8080/v1`. You need to host the backend locally if you don't have a public domain, otherwise configure Cloudflare tunnel to forward requests to your endpoint to use it with our public website.
+
+<div align="center">
+  <img width="300" height="400" alt="image" src="https://github.com/user-attachments/assets/6219ec39-e52b-4cda-9350-d87c40612c18" />
+</div>
 
 ## Security & Encryption
 
