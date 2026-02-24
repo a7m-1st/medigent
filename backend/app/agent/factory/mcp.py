@@ -7,7 +7,7 @@ from camel.messages import BaseMessage
 
 from app.agent.agent_model import agent_model
 from app.agent.prompt import MCP_SIDECAR_PROMPT
-from app.agent.tools import get_mcp_tools
+from app.agent.tools import get_all_mcp_tools
 from app.agent.utils import NOW_STR
 from app.model.chat import Chat
 from app.service.task import Agents
@@ -23,6 +23,9 @@ async def mcp_agent(options: Chat):
     ``installed_mcp`` in the Chat payload.  It joins the workforce as a
     regular worker so the coordinator can delegate tasks to it.
 
+    Supports both direct MCP connections (backend connects to the server)
+    and proxied connections (requests relayed through the browser).
+
     Uses the main model config (same LLM as other primary agents).
     """
     working_directory = get_working_directory(options)
@@ -34,12 +37,27 @@ async def mcp_agent(options: Chat):
         f"with {len(server_names)} MCP servers: {server_names}"
     )
 
-    # Load tools from all configured MCP servers.
+    # Categorize servers for logging
+    proxy_names = [
+        n for n, c in mcp_servers.items() if c.get("useLocalProxy")
+    ]
+    direct_names = [
+        n for n in server_names if n not in proxy_names
+    ]
+    if proxy_names:
+        logger.info(
+            f"Proxy servers (via browser): {proxy_names}, "
+            f"Direct servers: {direct_names}"
+        )
+
+    # Load tools from all configured MCP servers (both direct and proxied).
     # Let exceptions propagate — the caller (construct_workforce) handles
     # them and sends an SSE warning to the frontend.
     tools = []
     if mcp_servers:
-        mcp_tools = await get_mcp_tools(options.installed_mcp)
+        mcp_tools = await get_all_mcp_tools(
+            options.installed_mcp, options.project_id
+        )
         logger.info(
             f"Loaded {len(mcp_tools)} MCP tools for project {options.project_id}"
         )

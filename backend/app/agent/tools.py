@@ -52,8 +52,34 @@ async def get_toolkits(tools: list[str], agent_name: str, api_task_id: str):
     return res
 
 
+def _split_mcp_servers(
+    mcp_server: McpServers,
+) -> tuple[dict[str, dict], dict[str, dict]]:
+    """Split MCP servers into direct and proxied groups.
+
+    Returns:
+        Tuple of (direct_servers, proxy_servers).
+        Each is a dict of server_name -> server_config.
+    """
+    all_servers = mcp_server.get("mcpServers", {})
+    direct: dict[str, dict] = {}
+    proxy: dict[str, dict] = {}
+
+    for name, config in all_servers.items():
+        if config.get("useLocalProxy"):
+            proxy[name] = config
+        else:
+            direct[name] = config
+
+    return direct, proxy
+
+
 async def get_mcp_tools(mcp_server: McpServers):
     """Connect to MCP servers and return available tools.
+
+    Only connects to **direct** (non-proxy) servers. Proxy servers are
+    handled separately via ``get_proxy_mcp_tools()`` in
+    ``mcp_proxy_toolkit.py``.
 
     Raises:
         MCPConnectionError (from camel) or other exceptions on failure.
@@ -61,25 +87,24 @@ async def get_mcp_tools(mcp_server: McpServers):
         intentionally does NOT swallow them so that connection failures
         are surfaced to the user.
     """
+    direct_servers, _ = _split_mcp_servers(mcp_server)
+
     logger.info(
-        f"Getting MCP tools for {len(mcp_server['mcpServers'])} servers"
+        f"Getting MCP tools for {len(direct_servers)} direct servers"
     )
-    if len(mcp_server["mcpServers"]) == 0:
+    if len(direct_servers) == 0:
         return []
 
     # Build a DEEP copy of the config dict so mutations (timeout
     # injection by MCPToolkit, env injection below) never leak back
     # into the caller's ``options.installed_mcp``.
-    # For STDIO servers (command-based), ensure a unified auth directory
-    # so mcp-remote doesn't re-authenticate on each task.
-    # For URL-based (remote) servers, skip env injection — it's unused.
-    config_dict = copy.deepcopy(mcp_server)
+    config_dict = {"mcpServers": copy.deepcopy(direct_servers)}
     mcp_toolkit = MCPToolkit(config_dict=config_dict, timeout=30)
     await mcp_toolkit.connect()
 
     logger.info(
         f"Successfully connected to MCP toolkit with "
-        f"{len(mcp_server['mcpServers'])} servers"
+        f"{len(direct_servers)} direct servers"
     )
     tools = mcp_toolkit.get_tools()
     if tools:
@@ -93,3 +118,49 @@ async def get_mcp_tools(mcp_server: McpServers):
         ]
         logging.debug(f"MCP tool names: {tool_names}")
     return tools
+
+
+async def get_all_mcp_tools(
+    mcp_server: McpServers, project_id: str
+) -> list:
+    """Get tools from both direct and proxied MCP servers.
+
+    For direct servers, connects via CAMEL's MCPToolkit.
+    For proxy servers, uses the browser relay via McpProxyToolkit.
+
+    Args:
+        mcp_server: Full MCP server configuration from the Chat payload.
+        project_id: Project ID (needed to find the browser proxy relay).
+
+    Returns:
+        Combined list of FunctionTool instances from all servers.
+    """
+    direct_servers, proxy_servers = _split_mcp_servers(mcp_server)
+    all_tools: list = []
+
+    # 1. Direct servers (backend connects directly)
+    if direct_servers:
+        direct_config: McpServers = {"mcpServers": direct_servers}
+        direct_tools = await get_mcp_tools(direct_config)
+        all_tools.extend(direct_tools)
+        logger.info(
+            f"Loaded {len(direct_tools)} tools from "
+            f"{len(direct_servers)} direct MCP servers"
+        )
+
+    # 2. Proxy servers (browser relay)
+    if proxy_servers:
+        from app.agent.mcp_proxy_toolkit import get_proxy_mcp_tools
+
+        proxy_tools = await get_proxy_mcp_tools(
+            project_id=project_id,
+            proxy_servers=proxy_servers,
+            timeout=60.0,
+        )
+        all_tools.extend(proxy_tools)
+        logger.info(
+            f"Loaded {len(proxy_tools)} tools from "
+            f"{len(proxy_servers)} proxied MCP servers"
+        )
+
+    return all_tools

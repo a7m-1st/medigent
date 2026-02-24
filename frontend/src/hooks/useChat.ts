@@ -1,4 +1,5 @@
 import { encrypt } from '@/lib/encryption';
+import { McpProxyBridge } from '@/lib/mcpProxy';
 import { WSConnection, getWSUrl } from '@/lib/ws';
 import {
   useAgentStatusStore,
@@ -7,6 +8,7 @@ import {
   useTaskDecompStore,
 } from '@/stores';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
+import { useMcpStore } from '@/stores/mcpStore';
 import { useProjectStore } from '@/stores/projectStore';
 import type {
   Chat,
@@ -69,6 +71,7 @@ export function useChat(): UseChatReturn {
   const resourceStore = useResourceStore();
   const wsRef = useRef<WSConnection<SSEEvent> | null>(null);
   const isConnectingRef = useRef(false);
+  const mcpProxyRef = useRef<McpProxyBridge | null>(null);
 
   // Callback for useSSEHandler: sends start_task over the existing WS
   const startTaskViaWS = useCallback((projectId: string) => {
@@ -100,6 +103,10 @@ export function useChat(): UseChatReturn {
     if (wsRef.current) {
       wsRef.current.disconnect();
       wsRef.current = null;
+    }
+    if (mcpProxyRef.current) {
+      mcpProxyRef.current.disconnect();
+      mcpProxyRef.current = null;
     }
     store.setConnected(false);
   }, [store]);
@@ -355,6 +362,35 @@ export function useChat(): UseChatReturn {
         secondary_agent: secondaryAgent ?? null,
         history: history || [],
       };
+
+      // Connect the MCP proxy bridge if any servers use local proxy.
+      // This must happen BEFORE startChat so the backend can reach the
+      // browser relay during workforce construction.
+      const mcpState = useMcpStore.getState();
+      if (mcpState.hasProxyServers()) {
+        const proxyServers = mcpState.getProxyServers();
+        console.log(
+          '[useChat] Connecting MCP proxy bridge for',
+          Object.keys(proxyServers),
+        );
+
+        if (!mcpProxyRef.current) {
+          mcpProxyRef.current = new McpProxyBridge({
+            onStatusChange: (status) => {
+              console.log('[useChat] MCP proxy status:', status);
+            },
+          });
+        }
+
+        try {
+          await mcpProxyRef.current.connect(newProjectId, proxyServers);
+          console.log('[useChat] MCP proxy bridge connected');
+        } catch (err) {
+          console.error('[useChat] MCP proxy bridge failed to connect:', err);
+          // Continue anyway — backend will surface the error via SSE
+        }
+      }
+
       await startChat(chatData, { preserveMessages: isFollowUp });
     },
     [store, startChat],

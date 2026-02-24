@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from app.controller import (
     chat_controller,
     health_controller,
+    mcp_proxy_controller,
     model_controller,
     session_controller,
     task_controller
@@ -48,6 +49,11 @@ def register_routers(app: FastAPI, prefix: str = "") -> None:
             "router": session_controller.router,
             "tags": ["session"],
             "description": "Persistent WebSocket chat session handling",
+        },
+        {
+            "router": mcp_proxy_controller.router,
+            "tags": ["mcp-proxy"],
+            "description": "Browser-side MCP proxy relay WebSocket",
         },
         {
             "router": model_controller.router,

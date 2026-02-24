@@ -67,6 +67,7 @@ export const ChatSchema = z.object({
       url: z.string(),
       headers: z.record(z.string(), z.string()).optional(),
       type: z.enum(['sse', 'streamable_http', 'websocket']).optional(),
+      useLocalProxy: z.boolean().optional(),
     })),
   }).default({ mcpServers: {} }),
   summary_prompt: z.string().default(''),

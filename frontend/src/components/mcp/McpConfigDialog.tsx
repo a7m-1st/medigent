@@ -15,16 +15,23 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useMcpStore, type McpServerConfig } from '@/stores/mcpStore';
-import { Plug, Plus, Trash2 } from 'lucide-react';
+import { Globe, Monitor, Plug, Plus, Trash2 } from 'lucide-react';
 import React, { useState } from 'react';
 
 export const McpConfigDialog: React.FC = () => {
-  const { servers, isDialogOpen, setDialogOpen, addServer, removeServer } =
-    useMcpStore();
+  const {
+    servers,
+    isDialogOpen,
+    setDialogOpen,
+    addServer,
+    removeServer,
+    toggleLocalProxy,
+  } = useMcpStore();
 
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [transport, setTransport] = useState<string>('auto');
+  const [useProxy, setUseProxy] = useState(false);
   const [headerKey, setHeaderKey] = useState('');
   const [headerValue, setHeaderValue] = useState('');
   const [headers, setHeaders] = useState<Record<string, string>>({});
@@ -35,6 +42,7 @@ export const McpConfigDialog: React.FC = () => {
     setName('');
     setUrl('');
     setTransport('auto');
+    setUseProxy(false);
     setHeaderKey('');
     setHeaderValue('');
     setHeaders({});
@@ -64,7 +72,10 @@ export const McpConfigDialog: React.FC = () => {
     const trimmedUrl = url.trim();
     if (!trimmedName || !trimmedUrl) return;
 
-    const config: McpServerConfig = { url: trimmedUrl };
+    const config: McpServerConfig = {
+      url: trimmedUrl,
+      useLocalProxy: useProxy,
+    };
     if (transport !== 'auto') {
       config.type = transport as McpServerConfig['type'];
     }
@@ -96,19 +107,10 @@ export const McpConfigDialog: React.FC = () => {
             MCP Servers
           </DialogTitle>
           <DialogDescription className="text-foreground-muted text-center text-sm">
-            Configure remote MCP servers to extend agent capabilities with
-            external tools.
+            Configure MCP servers to extend agent capabilities with
+            external tools. Enable Local Proxy to route through your browser.
           </DialogDescription>
         </DialogHeader>
-
-        {/* Info banner */}
-        {/* <div className="flex items-start gap-2 rounded-lg bg-accent/5 border border-accent/20 px-3 py-2 text-xs text-foreground-muted">
-          <Plug className="w-4 h-4 text-accent shrink-0 mt-0.5" />
-          <span>
-            MCP servers are connected when you send a message. Changes take
-            effect on the next conversation.
-          </span>
-        </div> */}
 
         {/* Server list */}
         {serverEntries.length > 0 ? (
@@ -126,7 +128,33 @@ export const McpConfigDialog: React.FC = () => {
                     {config.url}
                   </span>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Local Proxy toggle */}
+                  <button
+                    type="button"
+                    onClick={() => toggleLocalProxy(serverName)}
+                    className={`
+                      flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono
+                      uppercase tracking-wider transition-colors cursor-pointer
+                      ${
+                        config.useLocalProxy
+                          ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                          : 'bg-background-secondary text-foreground-muted border border-border hover:border-blue-500/30 hover:text-blue-400'
+                      }
+                    `}
+                    title={
+                      config.useLocalProxy
+                        ? 'Using local proxy (requests routed through your browser)'
+                        : 'Using direct connection (click to enable local proxy)'
+                    }
+                  >
+                    {config.useLocalProxy ? (
+                      <Monitor className="w-3 h-3" />
+                    ) : (
+                      <Globe className="w-3 h-3" />
+                    )}
+                    {config.useLocalProxy ? 'LOCAL' : 'DIRECT'}
+                  </button>
                   <span className="text-[10px] font-mono uppercase tracking-wider text-accent bg-accent/10 px-1.5 py-0.5 rounded">
                     {getTransportLabel(config)}
                   </span>
@@ -163,22 +191,63 @@ export const McpConfigDialog: React.FC = () => {
             className="bg-input border-input-border text-foreground"
           />
           <Input
-            placeholder="URL (e.g. https://mcp.example.com/sse)"
+            placeholder="URL (e.g. http://localhost:3000/mcp)"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             className="bg-input border-input-border text-foreground"
           />
-          <Select value={transport} onValueChange={setTransport}>
-            <SelectTrigger className="bg-input border-input-border text-foreground">
-              <SelectValue placeholder="Transport (auto-detect)" />
-            </SelectTrigger>
-            <SelectContent className="bg-background border border-border shadow-lg">
-              <SelectItem value="auto">Auto-detect</SelectItem>
-              <SelectItem value="sse">SSE</SelectItem>
-              <SelectItem value="streamable_http">Streamable HTTP</SelectItem>
-              <SelectItem value="websocket">WebSocket</SelectItem>
-            </SelectContent>
-          </Select>
+
+          <div className="flex items-center gap-3">
+            <Select value={transport} onValueChange={setTransport}>
+              <SelectTrigger className="bg-input border-input-border text-foreground flex-1">
+                <SelectValue placeholder="Transport (auto-detect)" />
+              </SelectTrigger>
+              <SelectContent className="bg-background border border-border shadow-lg">
+                <SelectItem value="auto">Auto-detect</SelectItem>
+                <SelectItem value="sse">SSE</SelectItem>
+                <SelectItem value="streamable_http">Streamable HTTP</SelectItem>
+                <SelectItem value="websocket">WebSocket</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Local Proxy toggle for new server */}
+          <button
+            type="button"
+            onClick={() => setUseProxy(!useProxy)}
+            className={`
+              w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border
+              transition-colors cursor-pointer text-left
+              ${
+                useProxy
+                  ? 'bg-blue-500/10 border-blue-500/30 text-foreground'
+                  : 'bg-background-secondary border-border text-foreground-muted hover:border-blue-500/20'
+              }
+            `}
+          >
+            <div
+              className={`
+                w-8 h-[18px] rounded-full relative transition-colors shrink-0
+                ${useProxy ? 'bg-blue-500' : 'bg-border'}
+              `}
+            >
+              <div
+                className={`
+                  absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white
+                  transition-transform
+                  ${useProxy ? 'translate-x-[16px]' : 'translate-x-[2px]'}
+                `}
+              />
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-medium">
+                {useProxy ? 'Local Proxy Enabled' : 'Use Local Proxy'}
+              </span>
+              <span className="text-[10px] text-foreground-muted leading-tight">
+                Route requests through your browser to reach local servers
+              </span>
+            </div>
+          </button>
 
           {/* Headers */}
           <div className="space-y-2">
