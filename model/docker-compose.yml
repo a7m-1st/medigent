@@ -50,7 +50,7 @@ services:
     image: ghcr.io/ggml-org/llama.cpp:server-cuda
     container_name: medgemma-llamacpp
     ports:
-      - "8000:8000"
+      - "8080:8000"
     volumes:
       - ./models:/models
     command: >
