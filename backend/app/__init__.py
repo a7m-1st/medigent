@@ -30,9 +30,10 @@ if _backend_env.exists():
 
 # Start debugpy on port 5678
 try:
-    debugpy.listen(("0.0.0.0", 5678))
-    print("Debugpy listening on port 5678 - Attach your debugger now if needed")
+    debugpy.listen(("0.0.0.0", 5679))
+    print("Debugpy listening on port 5679 - Attach your debugger now if needed")
 except RuntimeError:
+    print("Debugpy failed to start - Port 5679 is already in use. Skipping debugpy setup.")
     pass  # Port already in use (e.g. uvicorn reload spawned a new process)
 
 # Initialize FastAPI with title
