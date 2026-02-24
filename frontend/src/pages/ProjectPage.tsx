@@ -84,10 +84,10 @@ export const ProjectPage: React.FC = () => {
   // Set HTML title
   useEffect(() => {
     if (project) {
-      document.title = `MedCrew | ${project.title}`;
+      document.title = `Medigent | ${project.title}`;
     }
     return () => {
-      document.title = 'MedCrew';
+      document.title = 'Medigent';
     };
   }, [project?.title]);
 
