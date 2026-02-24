@@ -1,7 +1,9 @@
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { clearAgentInfoCache } from '@/hooks/useSSEHandler';
 import { useAgentStatusStore, useChatStore, useResourceStore, useTaskDecompStore, useUIStore } from '@/stores';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
+import { useMcpStore } from '@/stores/mcpStore';
 import {
   ArrowLeft,
   HelpCircle,
@@ -10,6 +12,7 @@ import {
   MessageSquarePlus,
   Monitor,
   Moon,
+  Plug,
   Settings,
   Sun
 } from 'lucide-react';
@@ -46,6 +49,7 @@ export const MobileMenuPage: React.FC = () => {
         useAgentStatusStore.getState().reset();
         useTaskDecompStore.getState().reset();
         useResourceStore.getState().reset();
+        clearAgentInfoCache();
         navigate('/');
       },
     },
@@ -69,6 +73,17 @@ export const MobileMenuPage: React.FC = () => {
         navigate(-1);
         setTimeout(() => {
           useApiConfigStore.getState().setModalOpen(true);
+        }, 100);
+      },
+    },
+    {
+      icon: <Plug className="w-5 h-5" />,
+      label: 'MCP Servers',
+      description: 'Configure Model Context Protocol servers',
+      onClick: () => {
+        navigate(-1);
+        setTimeout(() => {
+          useMcpStore.getState().setDialogOpen(true);
         }, 100);
       },
     },

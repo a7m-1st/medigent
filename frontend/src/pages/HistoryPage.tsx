@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { useAgentStatusStore, useChatStore, useResourceStore, useTaskDecompStore, useUIStore } from '@/stores';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { clearAgentInfoCache } from '@/hooks/useSSEHandler';
 import {
   ArrowLeft,
   Calendar,
@@ -101,6 +102,7 @@ export const HistoryPage: React.FC = () => {
               useAgentStatusStore.getState().reset();
               useTaskDecompStore.getState().reset();
               useResourceStore.getState().reset();
+              clearAgentInfoCache();
               navigate('/');
             }}
             tooltip="New Chat"

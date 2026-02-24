@@ -20,6 +20,7 @@ from app.agent.factory import (
     chief_of_medicine_agent,
     clinical_pharmacologist_agent,
     clinical_researcher_agent,
+    mcp_agent,
     medical_scribe_agent,
     radiologist_agent,
     task_summary_agent,
@@ -167,6 +168,8 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
         task_lock.last_task_result = ""
     if not hasattr(task_lock, "summary_generated"):
         task_lock.summary_generated = False
+    if not hasattr(task_lock, "last_subtask_count"):
+        task_lock.last_subtask_count = 0
 
     # Other variables
     camel_task = None
@@ -366,6 +369,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 if incoming_task_id:
                     set_current_task_id(options.project_id, incoming_task_id)
                     task_lock.summary_generated = False
+                    task_lock.last_subtask_count = 0  # Reset for new task
 
                 if active_task_id and options.task_id != active_task_id:
                     options.task_id = active_task_id
@@ -511,7 +515,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                             "[NEW-QUESTION] Workforce still running — "
                             "preempting in-flight tasks"
                         )
-                        await workforce.preempt_and_redirect()
+                        await workforce.preempt_and_redirect(options)
                         # Drain stale events (e.g. ActionEndData that might
                         # have been queued before the preemption flag was set)
                         while not task_lock.queue.empty():
@@ -526,7 +530,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     else:
                         # Prepare workforce for the new task (reset memory,
                         # clear bookkeeping, keep workers alive)
-                        workforce.prepare_for_new_task()
+                        await workforce.prepare_for_new_task(options)
                         logger.info(
                             "[NEW-QUESTION] Workforce reset "
                             "for reuse via prepare_for_new_task()"
@@ -544,7 +548,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                             "[NEW-QUESTION] CACHED workforce still running — "
                             "preempting in-flight tasks"
                         )
-                        await workforce.preempt_and_redirect()
+                        await workforce.preempt_and_redirect(options)
                         # Drain stale events
                         while not task_lock.queue.empty():
                             try:
@@ -552,7 +556,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                             except asyncio.QueueEmpty:
                                 break
                     else:
-                        workforce.prepare_for_new_task()
+                        await workforce.prepare_for_new_task(options)
                     # Update toolkit working directories to current task folder
                     workforce.update_working_directory(working_directory)
                     logger.info(
@@ -567,6 +571,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     # Pass suggested_agents for dynamic agent creation
                     # If None (routing disabled) or empty, all agents are created
                     workforce = await construct_workforce(options, suggested_agents)
+
                 task_lock.status = Status.confirmed
 
                 # Create camel_task for the question
@@ -700,6 +705,8 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                             )
                         try:
                             task_lock.decompose_sub_tasks = sub_tasks
+                            # Store subtask count for summarization on followup turns
+                            task_lock.last_subtask_count = len(sub_tasks)
                         except Exception:
                             pass
 
@@ -972,9 +979,12 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
 
                 if camel_task is not None:
                     get_result = get_task_result_with_optional_summary
-                    final_result: str = await get_result(camel_task, options)
+                    final_result: str = await get_result(camel_task, options, task_lock)
                 elif task_lock.last_task_result.strip():
-                    final_result: str = task_lock.last_task_result
+                    # Strip subtask prefix from cached result
+                    final_result: str = _strip_subtask_prefix(
+                        task_lock.last_task_result
+                    )
                 elif item.data:
                     final_result: str = str(item.data)
                 else:
@@ -1120,6 +1130,7 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                     and workforce._running
             ):
                 workforce.stop()
+            task_lock.status = Status.done
         except Exception as e:
             logger.error(
                 "Unhandled exception for task "
@@ -1128,7 +1139,27 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                 exc_info=True,
             )
             yield sse_json("error", {"message": str(e)})
-            # Continue processing other items instead of breaking
+            # If workforce was never created (e.g. MCP connection
+            # failure during construct_workforce), continuing the loop
+            # would block forever on queue.get() with nothing to
+            # produce new items.  Clean up and break so the SSE
+            # connection closes and the frontend can react.
+            if workforce is None:
+                logger.warning(
+                    "[LIFECYCLE] Workforce is None after exception — "
+                    "breaking out of step_solve loop to avoid stall"
+                )
+                task_lock.status = Status.done
+                try:
+                    await delete_task_lock(task_lock.id)
+                except Exception:
+                    pass
+                break
+            # Workforce exists but hit an error — stop it and break
+            # to avoid leaving the session in a broken state.
+            if workforce._running:
+                workforce.stop()
+            task_lock.status = Status.done
 
 
 def to_sub_tasks(task: Task, summary_task_content: str):
@@ -1231,11 +1262,47 @@ async def summary_subtasks_result(agent: ListenChatAgent, task: Task) -> str:
         A concise summary of all subtask results
     """
     subtasks_info = ""
-    for i, subtask in enumerate(task.subtasks, 1):
-        subtasks_info += f"\n**Subtask {i}**\n"
-        subtasks_info += f"Description: {subtask.content}\n"
-        subtasks_info += f"Result: {subtask.result or 'No result'}\n"
-        subtasks_info += "---\n"
+
+    if task.subtasks:
+        # Normal path: build prompt from structured subtask objects
+        for i, subtask in enumerate(task.subtasks, 1):
+            subtasks_info += f"\n**Subtask {i}**\n"
+            subtasks_info += f"Description: {subtask.content}\n"
+            subtasks_info += f"Result: {subtask.result or 'No result'}\n"
+            subtasks_info += "---\n"
+    elif task.result and "--- Subtask" in str(task.result):
+        # Fallback: parse the raw aggregated result string.
+        # The CAMEL workforce assembles results with markers like:
+        #   --- Subtask <id> Result ---
+        #   <result text>
+        import re
+        raw = str(task.result)
+        # Split on the subtask markers, keeping the marker text
+        parts = re.split(r'(--- Subtask \S+ Result ---)', raw)
+        subtask_num = 0
+        for j in range(1, len(parts), 2):
+            subtask_num += 1
+            marker = parts[j].strip()
+            body = parts[j + 1].strip() if j + 1 < len(parts) else ""
+            subtasks_info += f"\n**Subtask {subtask_num}** ({marker})\n"
+            subtasks_info += f"Result: {body or 'No result'}\n"
+            subtasks_info += "---\n"
+
+        if not subtasks_info:
+            # Markers were present but parsing yielded nothing — use raw
+            subtasks_info = f"\nRaw results:\n{raw}\n"
+        logger.debug(
+            f"[SUMMARY] Built subtasks_info from raw result string "
+            f"({subtask_num} sections)"
+        )
+
+    if not subtasks_info:
+        # Nothing to summarize — return the raw result as-is
+        logger.warning(
+            f"[SUMMARY] No subtask info available for task {task.id}, "
+            "returning raw result"
+        )
+        return _strip_subtask_prefix(str(task.result or ""))
 
     prompt = f"""You are a professional summarizer. \
 Summarize the results of the following subtasks.
@@ -1261,10 +1328,11 @@ Summary:
     res = agent.step(prompt)
     summary = res.msgs[0].content
 
+    subtask_count = len(task.subtasks) if task.subtasks else "parsed-from-result"
     logger.info(
         "Generated subtasks summary for "
         f"task {task.id} with "
-        f"{len(task.subtasks)} subtasks"
+        f"{subtask_count} subtasks"
     )
 
     return summary
@@ -1283,8 +1351,15 @@ def _strip_subtask_prefix(text: str) -> str:
     return text
 
 
+def _detect_subtask_count_from_result(result: str) -> int:
+    """Detect number of subtasks by counting markers in result string."""
+    import re
+    matches = re.findall(r'--- Subtask \S+ Result ---', result)
+    return len(matches)
+
+
 async def get_task_result_with_optional_summary(
-        task: Task, options: Chat
+        task: Task, options: Chat, task_lock: TaskLock = None
 ) -> str:
     """
     Get the task result, with LLM summary if there are multiple subtasks.
@@ -1292,13 +1367,36 @@ async def get_task_result_with_optional_summary(
     Args:
         task: The task to get result from
         options: Chat options for creating summary agent
+        task_lock: Optional TaskLock for accessing cached subtask count
 
     Returns:
         The task result (summarized if multiple subtasks, raw otherwise)
     """
     result = str(task.result or "")
 
-    subtask_count = len(task.subtasks) if task.subtasks else 0
+    # Detect subtask count from multiple sources
+    subtask_count = 0
+    
+    # 1. Check task.subtasks (normal case)
+    if task.subtasks:
+        subtask_count = len(task.subtasks)
+    
+    # 2. Check task_lock for cached count (followup turns with workforce reuse)
+    elif task_lock and hasattr(task_lock, 'last_subtask_count'):
+        subtask_count = task_lock.last_subtask_count
+        logger.debug(
+            f"[RESULT] Using cached subtask_count={subtask_count} from task_lock"
+        )
+    
+    # 3. Parse result string for subtask markers (fallback)
+    if subtask_count == 0:
+        detected_count = _detect_subtask_count_from_result(result)
+        if detected_count > 0:
+            subtask_count = detected_count
+            logger.debug(
+                f"[RESULT] Detected subtask_count={subtask_count} from result string"
+            )
+
     logger.debug(
         f"[RESULT] task {task.id}: subtask_count={subtask_count}, "
         f"result_len={len(result)}, has_prefix={'--- Subtask' in result}"
@@ -1319,16 +1417,11 @@ async def get_task_result_with_optional_summary(
             logger.info(f"Successfully generated summary for task {task.id}")
         except Exception as e:
             logger.error(f"Failed to generate summary for task {task.id}: {e}")
+            # Fallback to stripped result
+            result = _strip_subtask_prefix(result)
     else:
-        # Single subtask (or subtask list not populated on cached-workforce
-        # follow-up turns) — strip the "--- Subtask ... Result ---" header
+        # Single subtask or no subtasks — strip the "--- Subtask ... Result ---" header
         # that the CAMEL base class prepends.
-        if subtask_count == 0 and "--- Subtask" in result:
-            logger.warning(
-                f"[RESULT] task {task.id}: subtasks list is empty but "
-                f"result contains subtask prefix — this indicates a "
-                f"workforce-reuse bookkeeping gap"
-            )
         result = _strip_subtask_prefix(result)
 
     return result
@@ -1643,6 +1736,49 @@ the current date.
         logger.debug(f"[WORKFORCE] Added {agent_name} to workforce")
 
     logger.info(f"[WORKFORCE] Workforce created with {len(specialist_agents)} specialist agents")
+
+    # Add MCP sidecar agent if MCP servers are configured.
+    # If the connection fails, let the exception propagate — the caller
+    # (step_solve) will emit an SSE error and stop the session so the
+    # user can fix or remove the broken MCP server config.
+    mcp_servers = options.installed_mcp.get("mcpServers", {})
+    if mcp_servers:
+        server_names = list(mcp_servers.keys())
+        logger.info(f"[WORKFORCE] Connecting to MCP servers: {server_names}")
+        try:
+            mcp_sidecar = await mcp_agent(options)
+        except Exception as e:
+            # Build a helpful diagnostic that includes the URL / command
+            # for each server so the user can spot typos or network issues.
+            server_details = []
+            for sn in server_names:
+                scfg = mcp_servers.get(sn, {})
+                if "url" in scfg:
+                    server_details.append(f"  {sn}: url={scfg['url']}")
+                elif "command" in scfg:
+                    server_details.append(f"  {sn}: command={scfg['command']}")
+                else:
+                    server_details.append(f"  {sn}: (no url or command)")
+            detail_block = "\n".join(server_details)
+            raise RuntimeError(
+                f"Failed to connect to MCP server(s) "
+                f"{', '.join(server_names)}: {e}\n\n"
+                f"Server details:\n{detail_block}\n\n"
+                f"Please remove or fix the MCP server configuration and try again."
+            ) from e
+        workforce.add_single_agent_worker(
+            f"MCP Agent: Executes external tool calls via "
+            f"{', '.join(server_names)} MCP servers. "
+            f"Delegate tasks that require these external tools to this agent.",
+            mcp_sidecar,
+        )
+        # Store MCP config hash for tracking changes on workforce reuse
+        import hashlib
+        import json
+        config_str = json.dumps(mcp_servers, sort_keys=True)
+        workforce._mcp_config_hash = hashlib.md5(config_str.encode()).hexdigest()
+        logger.info(f"[WORKFORCE] Added MCP agent with servers: {server_names}")
+
     return workforce
 
 
@@ -1815,6 +1951,7 @@ async def perform_triage(
             question=question,
             attachments=attachments if attachments else None,
             conversation_context=conversation_context,
+            installed_mcp=options.installed_mcp,
         )
 
         logger.info(

@@ -18,6 +18,7 @@ import {
   Wrench,
   MessageSquare,
   Clock,
+  Plug,
 } from 'lucide-react';
 import React, { useState } from 'react';
 
@@ -29,6 +30,7 @@ const AGENT_ICONS: Record<string, typeof Bot> = {
   clinical_researcher: BookOpen,
   medical_scribe: FileText,
   radiologist: Scan,
+  mcp_agent: Plug,
 };
 
 // Format token count for display (e.g., 340K, 1.2M)
@@ -73,6 +75,11 @@ const AGENT_COLORS: Record<string, { bg: string; text: string; border: string }>
     bg: 'bg-red-100 dark:bg-red-900/30',
     text: 'text-red-600 dark:text-red-400',
     border: 'border-red-200 dark:border-red-800',
+  },
+  mcp_agent: {
+    bg: 'bg-indigo-100 dark:bg-indigo-900/30',
+    text: 'text-indigo-600 dark:text-indigo-400',
+    border: 'border-indigo-200 dark:border-indigo-800',
   },
 };
 

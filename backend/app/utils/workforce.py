@@ -41,16 +41,23 @@ _BATCH_DRAIN_WINDOW: float = 0.15
 from app.agent.listen_chat_agent import ListenChatAgent
 from app.component import code
 from app.exception.exception import UserException
+from app.model.chat import Chat
 from app.service.task import (
     Action,
     ActionAssignTaskData,
     ActionEndData,
     ActionTaskStateData,
     ActionTimeoutData,
+    Agents,
     get_camel_task,
     get_task_lock,
 )
 from app.utils.single_agent_worker import SingleAgentWorker
+
+# Type hint imports for optional MCP agent update
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from app.agent.factory.mcp import mcp_agent as mcp_agent_func
 
 logger = logging.getLogger("workforce")
 
@@ -75,6 +82,7 @@ class Workforce(BaseWorkforce):
         self.api_task_id = api_task_id
         self._support_native_tool_calling = support_native_tool_calling
         self._preempted = False  # Feature 5: suppress ActionEndData on preemption
+        self._mcp_config_hash: str | None = None  # Track MCP config for dynamic updates
         logger.info("=" * 80)
         logger.info(
             "🏭 [WF-LIFECYCLE] Workforce.__init__ STARTED",
@@ -1106,7 +1114,9 @@ class Workforce(BaseWorkforce):
     # Feature 5: Preemption — cancel in-flight work for a new question
     # ------------------------------------------------------------------
 
-    async def preempt_and_redirect(self) -> None:
+    async def preempt_and_redirect(
+        self, options: "Chat | None" = None
+    ) -> None:
         """Cancel all in-flight subtasks so the workforce can immediately
         start a brand-new task.
 
@@ -1119,6 +1129,10 @@ class Workforce(BaseWorkforce):
         3. Give a short grace period for cancellation to propagate.
         4. Call :meth:`prepare_for_new_task` to clear bookkeeping and
            reset agents for the next task.
+
+        Args:
+            options: Optional Chat configuration. If provided, MCP agent
+                will be updated if the server config has changed.
 
         This method is safe to call from any thread — it uses
         ``_submit_coro_to_loop`` when the workforce event loop is alive,
@@ -1135,7 +1149,7 @@ class Workforce(BaseWorkforce):
                 "[WF-PREEMPT] Workforce not running, "
                 "falling back to prepare_for_new_task()"
             )
-            self.prepare_for_new_task()
+            await self.prepare_for_new_task(options)
             return
 
         # --- 1. Request stop (sets _stop_requested, unblocks pause) ---
@@ -1179,7 +1193,7 @@ class Workforce(BaseWorkforce):
         )
 
         # --- 4. Reset bookkeeping for the new task ---
-        self.prepare_for_new_task()
+        await self.prepare_for_new_task(options)
 
         logger.info(
             "[WF-PREEMPT] preempt_and_redirect() completed — "
@@ -1191,7 +1205,9 @@ class Workforce(BaseWorkforce):
     # Feature 3: Workforce reuse across tasks within the same project
     # ------------------------------------------------------------------
 
-    def prepare_for_new_task(self) -> None:
+    async def prepare_for_new_task(
+        self, options: Chat | None = None
+    ) -> None:
         """Reset the workforce so it can execute a brand-new task without
         the cost of rebuilding workers, models, and toolkits from scratch.
 
@@ -1199,6 +1215,10 @@ class Workforce(BaseWorkforce):
         assignments, dependency maps) and resets every worker agent's memory
         so that prior conversation doesn't leak into the next task.  The
         workers, channel, and coordinator/task agents are kept intact.
+
+        Args:
+            options: Optional Chat configuration. If provided and MCP servers
+                have changed, the MCP agent will be updated dynamically.
         """
         logger.info(
             "[WF-REUSE] prepare_for_new_task() called",
@@ -1251,11 +1271,111 @@ class Workforce(BaseWorkforce):
                 task.cancel()
         self._child_listening_tasks = []
 
+        # 8. Update MCP agent if options provided and config changed
+        if options is not None:
+            await self._update_mcp_agent_if_needed(options)
+
         logger.info(
             "[WF-REUSE] prepare_for_new_task() completed — "
             "workforce ready for reuse",
             extra={"api_task_id": self.api_task_id, "workforce_id": id(self)},
         )
+
+    async def _update_mcp_agent_if_needed(self, options: Chat) -> None:
+        """Update MCP sidecar agent if configuration has changed.
+
+        Compares the current MCP server configuration hash with the stored
+        hash. If different (servers added/removed/config changed), removes
+        the old MCP worker and creates a new one with updated configuration.
+
+        Args:
+            options: Chat configuration containing installed_mcp settings.
+        """
+        import hashlib
+        import json
+
+        mcp_servers = options.installed_mcp.get("mcpServers", {})
+        current_config_hash = None
+
+        if mcp_servers:
+            # Create deterministic hash of MCP config
+            config_str = json.dumps(mcp_servers, sort_keys=True)
+            current_config_hash = hashlib.md5(config_str.encode()).hexdigest()
+
+        # Check if config changed or if we need to add/remove MCP agent
+        config_changed = self._mcp_config_hash != current_config_hash
+        has_servers_now = bool(mcp_servers)
+        had_servers_before = self._mcp_config_hash is not None
+
+        if not config_changed:
+            logger.debug(
+                "[WF-REUSE] MCP config unchanged, no update needed",
+                extra={
+                    "api_task_id": self.api_task_id,
+                    "workforce_id": id(self),
+                    "config_hash": current_config_hash,
+                },
+            )
+            return
+
+        logger.info(
+            f"[WF-REUSE] MCP config changed (had_servers={had_servers_before}, "
+            f"has_servers={has_servers_now}), updating MCP agent",
+            extra={
+                "api_task_id": self.api_task_id,
+                "workforce_id": id(self),
+                "old_hash": self._mcp_config_hash,
+                "new_hash": current_config_hash,
+            },
+        )
+
+        # Remove existing MCP worker if present
+        mcp_worker_idx = None
+        for idx, child in enumerate(self._children):
+            if isinstance(child, SingleAgentWorker):
+                worker = getattr(child, "worker", None)
+                if worker and getattr(worker, "agent_name", None) == Agents.mcp_agent:
+                    mcp_worker_idx = idx
+                    break
+
+        if mcp_worker_idx is not None:
+            old_worker = self._children.pop(mcp_worker_idx)
+            logger.info(
+                f"[WF-REUSE] Removed old MCP worker at index {mcp_worker_idx}",
+                extra={"api_task_id": self.api_task_id, "workforce_id": id(self)},
+            )
+            # Clean up the old worker
+            if hasattr(old_worker, "stop"):
+                old_worker.stop()
+
+        # Create and add new MCP agent if servers are configured
+        if has_servers_now:
+            from app.agent.factory.mcp import mcp_agent
+
+            mcp_sidecar = await mcp_agent(options)
+            server_names = list(mcp_servers.keys())
+            self.add_single_agent_worker(
+                f"MCP Agent: Executes external tool calls via "
+                f"{', '.join(server_names)} MCP servers. "
+                f"Delegate tasks that require these external tools to this agent.",
+                mcp_sidecar,
+            )
+            self._mcp_config_hash = current_config_hash
+            logger.info(
+                f"[WF-REUSE] Added new MCP agent with servers: {server_names}",
+                extra={
+                    "api_task_id": self.api_task_id,
+                    "workforce_id": id(self),
+                    "config_hash": current_config_hash,
+                },
+            )
+        else:
+            # No servers configured, clear the hash
+            self._mcp_config_hash = None
+            logger.info(
+                "[WF-REUSE] MCP servers removed, no MCP agent in workforce",
+                extra={"api_task_id": self.api_task_id, "workforce_id": id(self)},
+            )
 
     # ------------------------------------------------------------------
     # Working-directory hot-swap for cached workforce reuse

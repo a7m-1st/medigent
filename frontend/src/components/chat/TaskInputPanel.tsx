@@ -1,8 +1,10 @@
 import { Button } from '@/components/ui/button';
+import { McpConfigDialog } from '@/components/mcp/McpConfigDialog';
 import { useChat } from '@/hooks/useChat';
 import { cn } from '@/lib/utils';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
 import { useChatStore } from '@/stores/chatStore';
+import { useMcpStore } from '@/stores/mcpStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -11,6 +13,7 @@ import {
   FileText,
   Paperclip,
   PauseCircle,
+  Plug,
   Send,
   Upload,
   X,
@@ -46,6 +49,7 @@ export const TaskInputPanel: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileAttachMenu, setShowMobileAttachMenu] = useState(false);
+  const mcpServers = useMcpStore((state) => state.servers);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
@@ -360,7 +364,7 @@ export const TaskInputPanel: React.FC = () => {
             api_key: geminiApiKey || '',
             api_url: DEFAULT_MODEL_API_URL,
             max_retries: 3,
-            installed_mcp: { mcpServers: {} },
+            installed_mcp: useMcpStore.getState().getInstalledMcp(),
             summary_prompt: '',
           },
           last5Messages,
@@ -572,6 +576,29 @@ export const TaskInputPanel: React.FC = () => {
           <Paperclip className="w-5 h-5" />
         </Button>
 
+        {/* MCP Servers Indicator - Only show when MCP is configured */}
+        {(() => {
+          const serverCount = Object.keys(mcpServers).length;
+          if (serverCount === 0) return null;
+          return (
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                'w-10 h-10 rounded-xl shrink-0 transition-colors relative',
+                'text-accent hover:bg-accent-light',
+              )}
+              onClick={() => useMcpStore.getState().setDialogOpen(true)}
+              title="MCP Servers"
+            >
+              <Plug className="w-5 h-5" />
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-accent text-accent-foreground text-[10px] font-bold flex items-center justify-center">
+                {serverCount}
+              </span>
+            </Button>
+          );
+        })()}
+
         <div
           className={cn(
             'flex-1 relative rounded-xl transition-all duration-200',
@@ -676,6 +703,9 @@ export const TaskInputPanel: React.FC = () => {
           </>
         )}
       </div>
+
+      {/* MCP Config Dialog */}
+      <McpConfigDialog />
     </div>
   );
 };

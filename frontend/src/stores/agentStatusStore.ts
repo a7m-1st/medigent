@@ -24,6 +24,7 @@ export const AgentStatusSchema = z.object({
     'clinical_researcher',
     'medical_scribe',
     'radiologist',
+    'mcp_agent',
   ]),
   displayName: z.string(),
   // Track all known IDs for this agent (backend may use different IDs across events)
@@ -54,6 +55,7 @@ export const AGENT_DISPLAY_NAMES: Record<string, string> = {
   clinical_researcher: 'Clinical Researcher',
   medical_scribe: 'Medical Scribe',
   radiologist: 'Radiologist',
+  mcp_agent: 'MCP Agent',
 };
 
 // Agents that use MedGemma (secondary_agent config)
@@ -73,6 +75,7 @@ export const MAIN_AGENT_NAMES = [
   'clinical_researcher',
   'medical_scribe',
   'radiologist',
+  'mcp_agent',
 ] as const;
 
 export type MainAgentName = typeof MAIN_AGENT_NAMES[number];

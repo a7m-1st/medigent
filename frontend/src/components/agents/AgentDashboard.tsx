@@ -18,6 +18,7 @@ import {
   Scan,
   Stethoscope,
   Pill,
+  Plug,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -29,6 +30,7 @@ const MEDICAL_AGENTS_CONFIG = [
   { name: 'radiologist', displayName: 'Radiologist', icon: Scan, color: 'red' },
   { name: 'attending_physician', displayName: 'Attending Physician', icon: Stethoscope, color: 'orange' },
   { name: 'clinical_pharmacologist', displayName: 'Clinical Pharmacologist', icon: Pill, color: 'teal' },
+  { name: 'mcp_agent', displayName: 'MCP Agent', icon: Plug, color: 'indigo' },
 ] as const;
 
 
@@ -391,6 +393,13 @@ function getColorClasses(color: string, state: string, isActive: boolean) {
       bg: !isActive ? 'bg-zinc-900/30 border-zinc-800/30' : state === 'working' ? 'bg-teal-400/5 border-teal-400/10' : state === 'completed' ? 'bg-emerald-400/5 border-emerald-400/10' : state === 'error' ? 'bg-rose-400/5 border-rose-400/10' : 'bg-zinc-800/30 border-zinc-700/30',
       ring: 'ring-1 ring-teal-400/20',
       bar: 'bg-teal-400',
+    },
+    indigo: {
+      icon: state === 'working' ? 'text-indigo-400' : state === 'completed' ? 'text-emerald-400' : state === 'error' ? 'text-rose-400' : 'text-zinc-600',
+      dot: !isActive ? 'bg-zinc-700' : state === 'working' ? 'bg-indigo-400' : state === 'completed' ? 'bg-emerald-400' : state === 'error' ? 'bg-rose-400' : 'bg-zinc-600',
+      bg: !isActive ? 'bg-zinc-900/30 border-zinc-800/30' : state === 'working' ? 'bg-indigo-400/5 border-indigo-400/10' : state === 'completed' ? 'bg-emerald-400/5 border-emerald-400/10' : state === 'error' ? 'bg-rose-400/5 border-rose-400/10' : 'bg-zinc-800/30 border-zinc-700/30',
+      ring: 'ring-1 ring-indigo-400/20',
+      bar: 'bg-indigo-400',
     },
   };
 

@@ -227,6 +227,9 @@ class Agents(str, Enum):
     attending_physician = "attending_physician"
     clinical_pharmacologist = "clinical_pharmacologist"
 
+    # MCP sidecar agent
+    mcp_agent = "mcp_agent"
+
 
 class TaskLock:
     id: str
