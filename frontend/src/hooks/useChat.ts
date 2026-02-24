@@ -404,8 +404,8 @@ export function useChat(): UseChatReturn {
 
       // Clean history: remove files without data (placeholders from localStorage)
       // Also remove the files property entirely if no files remain
-      const cleanedHistory = (history || []).map(msg => {
-        const validFiles = msg.files?.filter(f => f.data);
+      const cleanedHistory = (history || []).map((msg) => {
+        const validFiles = msg.files?.filter((f) => f.data);
         const cleanedMsg = { ...msg };
         if (validFiles && validFiles.length > 0) {
           cleanedMsg.files = validFiles;
@@ -491,7 +491,9 @@ export function useChat(): UseChatReturn {
         }
       }
 
-      // Send stop via WebSocket if connected, otherwise fall back to REST
+      // Send stop via WebSocket if connected, otherwise fall back to REST.
+      // Keep the WS alive — the backend step_solve loop handles cleanup.
+      // The WS will be torn down on unmount or API config change.
       if (wsRef.current && wsRef.current.getState().isConnected) {
         wsRef.current.send('stop', {});
       } else {
@@ -503,9 +505,6 @@ export function useChat(): UseChatReturn {
           await restStopChat(taskId);
         }
       }
-
-      // Disconnect the WebSocket after stopping
-      cleanupWS();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to stop chat';

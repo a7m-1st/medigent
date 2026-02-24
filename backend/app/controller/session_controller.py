@@ -76,6 +76,7 @@ async def websocket_chat(ws: WebSocket):
     task_lock = None
     sse_consumer_task: asyncio.Task | None = None
     options: Chat | None = None
+    stopped_via_action = False  # True when stop was handled inside step_solve
 
     async def _delayed_disconnect_cleanup(lock: TaskLock):
         """Wait 5 seconds after disconnect, then stop workforce and delete cache."""
@@ -341,6 +342,7 @@ async def websocket_chat(ws: WebSocket):
             # ----------------------------------------------------------
             elif msg_type == "stop":
                 if task_lock is not None:
+                    stopped_via_action = True
                     await task_lock.put_queue(
                         ActionStopData(action=Action.stop)
                     )
@@ -426,8 +428,10 @@ async def websocket_chat(ws: WebSocket):
             except (asyncio.CancelledError, Exception):
                 pass
 
-        # Schedule delayed cleanup (5s) - stop workforce and delete cache if not reconnected
-        if task_lock is not None:
+        # Only schedule disconnect cleanup if the session wasn't already
+        # stopped via the stop action (which already cleaned up in step_solve).
+        from app.service.task import task_locks
+        if task_lock is not None and not stopped_via_action and task_lock.id in task_locks:
             task_lock.status = Status.done
             while not task_lock.queue.empty():
                 try:
@@ -442,6 +446,11 @@ async def websocket_chat(ws: WebSocket):
             session_logger.info(
                 "[WS] Scheduled disconnect cleanup in 5s",
                 extra={"project_id": task_lock.id}
+            )
+        elif stopped_via_action:
+            session_logger.info(
+                "[WS] Skipping disconnect cleanup — stop already handled",
+                extra={"project_id": task_lock.id if task_lock else None}
             )
 
         session_logger.info("[WS] Cleanup complete")
