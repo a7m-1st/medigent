@@ -1,6 +1,6 @@
-# Medigent - Your Intelligent Partner for Medical Insights
+# Medigent - Your Intelligent Cowork for Medical Insights
 
-This project consists of a multi-agent system with a FastAPI backend and React frontend, integrated with the MedGemma AI model.
+This project consists of a multi-agent system built with CAMEL AI, featuring a FastAPI backend and React frontend, integrated with the MedGemma AI model.
 
 ## Project Structure
 
