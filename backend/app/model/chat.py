@@ -49,6 +49,28 @@ class AgentConfig(BaseModel):
     # Used as token_limit for CAMEL's auto-compaction (context summarization).
     # If None, CAMEL uses the model backend's default token limit.
     model_context_size: int | None = None
+    # Optional HTTP headers to include in every API request.
+    # Use this to pass Authorization: Bearer <token> for HuggingFace endpoints.
+    default_headers: dict[str, str] | None = None
+
+    @field_validator("model_type")
+    @classmethod
+    def normalize_model_type(cls, model_type: str | None):
+        """Normalize model_type from enum NAME to enum VALUE if applicable.
+
+        The frontend sends enum names (e.g. 'GLM_4_6V') but the API expects
+        the enum value (e.g. 'glm-4.6v'). If the string is not a known enum
+        name, it passes through as-is — allowing any custom/OpenAI-compatible
+        model type.
+        """
+        if model_type is None:
+            return model_type
+        try:
+            enum_member = ModelType[model_type]
+            return enum_member.value
+        except KeyError:
+            pass
+        return model_type
 
     def get_effective_config(self, fallback: "AgentConfig") -> "AgentConfig":
         """Returns a new AgentConfig with fallbacks applied."""
@@ -61,6 +83,7 @@ class AgentConfig(BaseModel):
             or fallback.use_simulated_tool_calling,
             model_context_size=self.model_context_size
             or fallback.model_context_size,
+            default_headers=self.default_headers or fallback.default_headers,
         )
 
     def has_custom_config(self) -> bool:
@@ -136,9 +159,15 @@ class Chat(BaseModel):
             # Set default secondary_agent (MedGemma) configuration if not provided
             if not data.get("secondary_agent"):
                 medgemma_ctx = os.getenv("MEDGEMMA_CONTEXT_SIZE", "16384")
+                # Support HuggingFace Bearer token via MEDGEMMA_API_KEY or HF_TOKEN
+                medgemma_api_key = os.getenv("MEDGEMMA_API_KEY") or os.getenv("HF_TOKEN")
+                # Build default_headers for Authorization if a token is set
+                medgemma_headers: dict[str, str] | None = None
+                if medgemma_api_key:
+                    medgemma_headers = {"Authorization": f"Bearer {medgemma_api_key}"}
                 data["secondary_agent"] = {
                     "api_url": os.getenv(
-                        "MEDGEMMA_API_URL", "https://med.awelkaircodes.org/v1"
+                        "MEDGEMMA_API_URL", "https://q65rl2gizt0q85k7.eu-west-1.aws.endpoints.huggingface.cloud/v1"
                     ),
                     "model_platform": os.getenv(
                         "MEDGEMMA_MODEL_PLATFORM", "openai-compatible-model"
@@ -146,10 +175,12 @@ class Chat(BaseModel):
                     "model_type": os.getenv(
                         "MEDGEMMA_MODEL_TYPE", "medgemma-4b"
                     ),
+                    "api_key": medgemma_api_key,
                     "use_simulated_tool_calling": True,
                     "model_context_size": int(medgemma_ctx)
                     if medgemma_ctx
                     else None,
+                    "default_headers": medgemma_headers,
                 }
         return data
 
@@ -215,6 +246,9 @@ class AgentModelConfig(BaseModel):
     # Context window size in tokens, passed from AgentConfig (secondary agents).
     # Used as token_limit for CAMEL's auto-compaction.
     model_context_size: int | None = None
+    # Optional HTTP headers forwarded to the OpenAI-compatible client.
+    # Used to pass Authorization: Bearer <token> for HuggingFace endpoints.
+    default_headers: dict[str, str] | None = None
 
     def has_custom_config(self) -> bool:
         """Check if any custom model configuration is set."""

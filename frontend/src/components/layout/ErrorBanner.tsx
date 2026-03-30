@@ -1,7 +1,7 @@
 import React from 'react';
 import { useChatStore } from '@/stores';
 import type { ErrorType } from '@/stores/chatStore';
-import { AlertTriangle, XCircle, CreditCard, X } from 'lucide-react';
+import { AlertTriangle, XCircle, CreditCard, X, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
 const ERROR_CONFIG: Record<Exclude<ErrorType, null>, {
@@ -12,6 +12,14 @@ const ERROR_CONFIG: Record<Exclude<ErrorType, null>, {
   iconClass: string;
   textClass: string;
 }> = {
+  warming_up: {
+    icon: <Loader2 className="w-4 h-4 animate-spin" />,
+    title: 'MedGemma Warming Up',
+    bgClass: 'bg-blue-50 dark:bg-blue-950/30',
+    borderClass: 'border-blue-200 dark:border-blue-800/40',
+    iconClass: 'text-blue-600 dark:text-blue-400',
+    textClass: 'text-blue-700 dark:text-blue-300',
+  },
   rate_limit: {
     icon: <AlertTriangle className="w-4 h-4" />,
     title: 'Rate Limit Reached',

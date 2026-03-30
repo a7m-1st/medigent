@@ -30,6 +30,7 @@ import {
   type SSEWriteFileEvent,
   type SSTerminalEvent,
 } from '@/types';
+import type { SSEMedgemmaStatusEvent } from '@/types/sse';
 import { useCallback } from 'react';
 
 // ============================================
@@ -207,6 +208,10 @@ export function useSSEHandler(options: SSEHandlerOptions = {}) {
 
         case 'budget_not_enough':
           handleBudgetNotEnough(data);
+          break;
+
+        case 'medgemma_status':
+          handleMedgemmaStatus(data as SSEMedgemmaStatusEvent['data']);
           break;
 
         default:
@@ -610,6 +615,19 @@ export function useSSEHandler(options: SSEHandlerOptions = {}) {
       'budget',
     );
     // Keep session running — backend may retry or user can send a new message
+  }
+
+  function handleMedgemmaStatus(data: SSEMedgemmaStatusEvent['data']) {
+    if (data.status === 'warming_up') {
+      // Show a non-blocking warning banner while the endpoint warms up
+      chatStore.setError(data.message, 'warming_up');
+    } else if (data.status === 'ready') {
+      // Endpoint is available — dismiss the warming-up banner
+      chatStore.clearError();
+    } else if (data.status === 'unavailable') {
+      // Endpoint didn't come up in time — show as generic error
+      chatStore.setError(data.message, 'generic');
+    }
   }
 
   return { handleEvent };

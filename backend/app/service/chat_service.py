@@ -46,6 +46,7 @@ from app.service.task import (
 )
 from app.utils.event_loop_utils import set_main_event_loop
 from app.utils.file_utils import get_working_directory, process_attaches
+from app.utils.medgemma_health import check_medgemma_health, wait_for_medgemma
 from app.utils.triage import (
     ComplexityLevel,
     TriageResult,
@@ -181,6 +182,14 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
     cached_agents_replayed = False
     latest_task_state = "unknown"
     latest_task_result = ""
+
+    # MedGemma warm-up: runs in background during decomposition,
+    # only blocks when Action.start is received.
+    medgemma_ready_event = asyncio.Event()
+    medgemma_ready_event.set()  # default: no gate
+    medgemma_final_status: dict[str, str | bool] = {
+        "checked": False, "available": True, "message": ""
+    }
 
     # Session timeout: 1 hour (3600 seconds)
     SESSION_TIMEOUT_SECONDS = 3600
@@ -495,6 +504,59 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         f"Suggested agents: {suggested_agents}"
                     )
 
+                    # ========================================================
+                    # MedGemma endpoint health check (non-blocking)
+                    # Quick probe now; if down, show banner and poll in
+                    # the background while decomposition proceeds.
+                    # Action.start is gated on medgemma_ready_event.
+                    # ========================================================
+                    medgemma_cfg = options.secondary_agent
+                    if medgemma_cfg and medgemma_cfg.api_url:
+                        health = await check_medgemma_health(
+                            api_url=medgemma_cfg.api_url,
+                            api_key=medgemma_cfg.api_key,
+                            default_headers=medgemma_cfg.default_headers,
+                        )
+                        if not health.available:
+                            # Clear the gate — Action.start will wait
+                            medgemma_ready_event.clear()
+                            medgemma_final_status["checked"] = True
+                            medgemma_final_status["available"] = False
+                            medgemma_final_status["message"] = health.message
+
+                            # Tell frontend immediately
+                            yield sse_json(
+                                "medgemma_status",
+                                {
+                                    "status": "warming_up",
+                                    "message": health.message,
+                                },
+                            )
+                            logger.info(
+                                "[MEDGEMMA] Endpoint unavailable — "
+                                "starting background warm-up polling"
+                            )
+
+                            # Background task: poll until ready, then signal
+                            async def _background_medgemma_warmup():
+                                final = await wait_for_medgemma(
+                                    api_url=medgemma_cfg.api_url,
+                                    api_key=medgemma_cfg.api_key,
+                                    default_headers=medgemma_cfg.default_headers,
+                                )
+                                medgemma_final_status["available"] = final.available
+                                medgemma_final_status["message"] = final.message
+                                medgemma_ready_event.set()
+
+                            warmup_task = asyncio.create_task(
+                                _background_medgemma_warmup()
+                            )
+                            task_lock.add_background_task(warmup_task)
+                        else:
+                            # Already available — no gate needed
+                            medgemma_final_status["checked"] = True
+                            medgemma_final_status["available"] = True
+
                 # ============================================================
                 # END DYNAMIC ROUTING
                 # ============================================================
@@ -797,6 +859,45 @@ async def step_solve(options: Chat, request: Request, task_lock: TaskLock):
                         },
                     )
                     continue
+
+                # ============================================================
+                # Gate on MedGemma readiness before starting the workforce.
+                # The background warm-up poll runs during decomposition;
+                # we only block here (after to_sub_tasks was already sent).
+                # ============================================================
+                if not medgemma_ready_event.is_set():
+                    logger.info(
+                        "[MEDGEMMA] Waiting for endpoint before "
+                        "starting workforce …"
+                    )
+                    await medgemma_ready_event.wait()
+
+                # Emit final status so frontend can dismiss the banner
+                if medgemma_final_status["checked"]:
+                    if medgemma_final_status["available"]:
+                        yield sse_json(
+                            "medgemma_status",
+                            {
+                                "status": "ready",
+                                "message": "MedGemma endpoint is now available.",
+                            },
+                        )
+                    else:
+                        yield sse_json(
+                            "medgemma_status",
+                            {
+                                "status": "unavailable",
+                                "message": str(
+                                    medgemma_final_status["message"]
+                                ),
+                            },
+                        )
+                        logger.warning(
+                            "[MEDGEMMA] Endpoint did not come up "
+                            "in time — proceeding anyway"
+                        )
+                    # Reset so we don't re-emit on subsequent starts
+                    medgemma_final_status["checked"] = False
 
                 if workforce is not None:
                     if workforce._state.name == "PAUSED":

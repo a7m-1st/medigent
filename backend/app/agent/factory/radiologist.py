@@ -111,6 +111,7 @@ async def radiologist_agent(options: Chat):
         api_key=effective_config.api_key,
         api_url=effective_config.api_url,
         model_context_size=effective_config.model_context_size,
+        default_headers=effective_config.default_headers,
     ) if effective_config.has_custom_config() else None
     
     return agent_model(

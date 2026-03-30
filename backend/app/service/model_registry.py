@@ -54,6 +54,7 @@ def _compute_fingerprint(
     api_key: str | None = None,
     api_url: str | None = None,
     model_config_dict: dict | None = None,
+    default_headers: dict | None = None,
 ) -> str:
     """Compute a deterministic fingerprint for a model configuration.
 
@@ -66,6 +67,8 @@ def _compute_fingerprint(
         api_key: API key (hashed, never stored in plain text).
         api_url: API endpoint URL.
         model_config_dict: Additional model configuration (e.g. streaming).
+        default_headers: Custom HTTP headers (e.g. Authorization: Bearer) included
+            in fingerprint so different header configs get separate cache entries.
 
     Returns:
         A hex digest string uniquely identifying this configuration.
@@ -79,7 +82,15 @@ def _compute_fingerprint(
         sorted_items = sorted(model_config_dict.items())
         config_str = str(sorted_items)
 
-    raw = f"{model_platform}|{model_type}|{api_url or ''}|{key_hash}|{config_str}"
+    # Include default_headers keys in fingerprint (hash values for security)
+    headers_str = ""
+    if default_headers:
+        headers_hash = hashlib.sha256(
+            str(sorted(default_headers.items())).encode()
+        ).hexdigest()[:16]
+        headers_str = headers_hash
+
+    raw = f"{model_platform}|{model_type}|{api_url or ''}|{key_hash}|{config_str}|{headers_str}"
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
@@ -90,6 +101,7 @@ def get_or_create_model(
     api_url: str | None = None,
     model_config_dict: dict | None = None,
     timeout: int = 600,
+    default_headers: dict[str, str] | None = None,
     **init_params: Any,
 ) -> Any:
     """Get an existing model backend or create a new one.
@@ -115,6 +127,7 @@ def get_or_create_model(
         api_key=api_key,
         api_url=api_url,
         model_config_dict=model_config_dict,
+        default_headers=default_headers,
     )
 
     with _registry_lock:
@@ -139,6 +152,7 @@ def get_or_create_model(
         url=api_url,
         model_config_dict=model_config_dict or None,
         timeout=timeout,
+        **(({"default_headers": default_headers} if default_headers else {})),
         **init_params,
     )
 

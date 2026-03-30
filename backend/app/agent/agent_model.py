@@ -120,6 +120,13 @@ def agent_model(
             f"(auto-compaction enabled at ~90% usage)"
         )
 
+    # Resolve custom headers (e.g. Authorization: Bearer for HuggingFace endpoints)
+    resolved_headers = (
+        custom_model_config.default_headers
+        if custom_model_config and custom_model_config.default_headers
+        else None
+    )
+
     # Use shared model registry to avoid redundant ModelFactory.create() calls.
     # Identical configurations (same platform/type/key/url) return the same
     # cached backend instance — typically only 2 are needed (Gemini + MedGemma).
@@ -130,6 +137,7 @@ def agent_model(
         api_url=effective_config["api_url"],
         model_config_dict=model_config or None,
         timeout=600,  # 10 minutes
+        default_headers=resolved_headers,
         **init_params,
     )
 

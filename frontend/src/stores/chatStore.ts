@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import type { ChatMessage } from '@/types'
 
-export type ErrorType = 'rate_limit' | 'budget' | 'generic' | null;
+export type ErrorType = 'rate_limit' | 'budget' | 'generic' | 'warming_up' | null;
 
 interface ChatState {
   // State

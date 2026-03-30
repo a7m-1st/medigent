@@ -613,15 +613,17 @@ export const TaskInputPanel: React.FC = () => {
             onPaste={(e) => {
               const clipboardData = e.clipboardData;
               if (clipboardData && clipboardData.items) {
-                for (let i = 0; i < clipboardData.items.length; i++) {
-                  const item = clipboardData.items[i];
-                  if (item.type.startsWith('image/')) {
-                    e.preventDefault();
-                    alert(
-                      'Cannot read clipboard: this model does not support image input. Please use the attachment button to upload images.',
-                    );
-                    return;
-                  }
+                const items = Array.from(clipboardData.items);
+                const imageItems = items.filter((item) =>
+                  item.type.startsWith('image/'),
+                );
+
+                if (imageItems.length > 0) {
+                  e.preventDefault();
+                  const files = imageItems
+                    .map((item) => item.getAsFile())
+                    .filter((file): file is File => file !== null);
+                  processFiles(files);
                 }
               }
             }}
@@ -681,7 +683,7 @@ export const TaskInputPanel: React.FC = () => {
           isMobile && 'hidden',
         )}
       >
-        <span>Gemini 3 Flash + Medgemma</span>
+        <span>Gemini 3.1 Flash Lite + Medgemma 4B</span>
         <span className="w-1 h-1 rounded-full bg-border" />
         <span>Multi-Agent System</span>
         <span className="w-1 h-1 rounded-full bg-border" />

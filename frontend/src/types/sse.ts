@@ -236,6 +236,17 @@ export const SSEErrorEventSchema = z.object({
   data: SSEErrorDataSchema,
 });
 
+// 18. MedGemma Status Event - Endpoint warm-up / availability
+export const SSEMedgemmaStatusDataSchema = z.object({
+  status: z.enum(['warming_up', 'ready', 'unavailable']),
+  message: z.string(),
+});
+
+export const SSEMedgemmaStatusEventSchema = z.object({
+  step: z.literal('medgemma_status'),
+  data: SSEMedgemmaStatusDataSchema,
+});
+
 // ============================================
 // Union Type for All SSE Events
 // ============================================
@@ -257,6 +268,7 @@ export const SSEEventSchema = z.discriminatedUnion('step', [
   SSEBudgetNotEnoughEventSchema,
   SSEEndEventSchema,
   SSEErrorEventSchema,
+  SSEMedgemmaStatusEventSchema,
 ]);
 
 export type SSEEvent = z.infer<typeof SSEEventSchema>;
@@ -281,6 +293,7 @@ export type SSEAskEvent = z.infer<typeof SSEAskEventSchema>;
 export type SSEBudgetNotEnoughEvent = z.infer<typeof SSEBudgetNotEnoughEventSchema>;
 export type SSEEndEvent = z.infer<typeof SSEEndEventSchema>;
 export type SSEErrorEvent = z.infer<typeof SSEErrorEventSchema>;
+export type SSEMedgemmaStatusEvent = z.infer<typeof SSEMedgemmaStatusEventSchema>;
 
 // ============================================
 // Helper Functions
