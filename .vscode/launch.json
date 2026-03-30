@@ -7,9 +7,7 @@
     {
       "name": "Debug App",
       "preLaunchTask": "Before Debug",
-      "configurations": [
-        "Debug Python Backend (Attach)"
-      ],
+      "configurations": ["Debug Python Backend (Attach)"],
       "presentation": {
         "hidden": false,
         "group": "",
@@ -25,7 +23,7 @@
       "request": "attach",
       "connect": {
         "host": "localhost",
-        "port": 5678
+        "port": 5679
       },
       "pathMappings": [
         {

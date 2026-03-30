@@ -2,6 +2,8 @@
 
 This project consists of a multi-agent system built with CAMEL AI, featuring a FastAPI backend and React frontend, integrated with the MedGemma AI model.
 
+<img width="1080" height="608" alt="f46aca462058acbaf5a5a2b5529b432e" src="https://github.com/user-attachments/assets/699f97bc-f8a9-4a90-b297-338d05c9158c" />
+
 ## Project Structure
 
 - `backend/` - FastAPI backend with multi-agent system
